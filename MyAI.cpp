@@ -242,7 +242,7 @@ void MyAI::generateMove(char move[6])
 		int best_move_tmp; double t_tmp;
 
 		// run Nega-max
-		t_tmp = Nega_max(this->main_chessboard, &best_move_tmp, this->Color, 0, depth);
+		t_tmp = Nega_max(this->main_chessboard, &best_move_tmp, this->Color, 0, depth, -DBL_MAX, DBL_MAX);
 		t_tmp -= OFFSET; // rescale
 
 		// check score
@@ -571,7 +571,7 @@ double MyAI::Evaluate(const ChessBoard* chessboard,
 	return score;
 }
 
-double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth){
+double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth, double alpha, double beta){
 
 	int Moves[2048];
 	int move_count = 0;
@@ -589,14 +589,14 @@ double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, c
 		// odd: *-1, even: *1
 		return Evaluate(&chessboard, move_count, color) * (depth&1 ? -1 : 1);
 	}else{
-		double m = -DBL_MAX;
+		double m = alpha; // initialize with alpha instead
 		int new_move;
 		// search deeper
 		for(int i = 0; i < move_count; i++){ // move
 			ChessBoard new_chessboard = chessboard;
 			
 			MakeMove(&new_chessboard, Moves[i], 0); // 0: dummy
-			double t = -Nega_max(new_chessboard, &new_move, color^1, depth+1, remain_depth-1);
+			double t = -Nega_max(new_chessboard, &new_move, color^1, depth+1, remain_depth-1, -beta, -m); // nega max: flip sign of alpha and beta
 			if(t > m){ 
 				m = t;
 				*move = Moves[i];
@@ -604,6 +604,7 @@ double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, c
 				bool r = rand()%2;
 				if(r) *move = Moves[i];
 			}
+			if (m >= beta) return beta;
 		}
 		return m;
 	}
