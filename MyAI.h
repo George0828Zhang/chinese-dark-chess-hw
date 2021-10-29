@@ -22,6 +22,17 @@ struct ChessBoard{
 	int HistoryCount;
 };
 
+class MoveInfo{
+public:
+	int from_chess_no;
+	int to_chess_no;
+	MoveInfo(){} // uninitialized
+	MoveInfo(int from, int to): from_chess_no(from), to_chess_no(to){}
+	inline int movenum(){
+		return from_chess_no*100 + to_chess_no;
+	}
+};
+
 class MyAI  
 {
 	const char* commands_name[COMMAND_NUM] = {
@@ -89,7 +100,7 @@ private:
 	void MakeMove(ChessBoard* chessboard, const int move, const int chess);
 	void MakeMove(ChessBoard* chessboard, const char move[6]);
 	bool Referee(const int* board, const int Startoint, const int EndPoint, const int color);
-	int Expand(const int* board, const int color, int *Result);
+	int Expand(const int* board, const int color, MoveInfo *Result);
 	double Evaluate(const ChessBoard* chessboard, const int legal_move_count, const int color);
 	double Nega_max(ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth, const double alpha, const double beta);
 	bool isDraw(const ChessBoard* chessboard);
