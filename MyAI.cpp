@@ -335,7 +335,7 @@ int MyAI::Expand(const int* board, const int color,MoveInfo *Result)
 				{
 					if(Referee(board,i,rowCount,color))
 					{
-						Result[ResultCount] = MoveInfo(i, rowCount);
+						Result[ResultCount] = MoveInfo(board, i, rowCount);
 						ResultCount++;
 					}
 				}
@@ -344,7 +344,7 @@ int MyAI::Expand(const int* board, const int color,MoveInfo *Result)
 				
 					if(Referee(board,i,colCount,color))
 					{
-						Result[ResultCount] = MoveInfo(i, colCount);
+						Result[ResultCount] = MoveInfo(board, i, colCount);
 						ResultCount++;
 					}
 				}
@@ -357,7 +357,7 @@ int MyAI::Expand(const int* board, const int color,MoveInfo *Result)
 					
 					if(Move[k] >= 0 && Move[k] < 32 && Referee(board,i,Move[k],color))
 					{
-						Result[ResultCount] = MoveInfo(i, Move[k]);
+						Result[ResultCount] = MoveInfo(board, i, Move[k]);
 						ResultCount++;
 					}
 				}
@@ -593,7 +593,11 @@ double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, c
 
 	// move
 	move_count = Expand(chessboard.Board, color, Moves);
-	std::sort(Moves, Moves+move_count, movecomp);
+	std::sort(Moves, Moves + move_count, movecomp);
+	// if (depth == 4 && move_count > 1)
+	// {
+	// 	fprintf(stderr, "[DEBUG] Move 0vs1: (%d %d) > (%d %d)\n", Moves[0].from_chess_no % 7, Moves[0].to_chess_no % 7, Moves[1].from_chess_no % 7, Moves[1].to_chess_no % 7);
+	// }
 
 	if(isTimeUp() || // time is up
 		remain_depth == 0 || // reach limit of depth
@@ -611,14 +615,14 @@ double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, c
 		for(int i = 0; i < move_count; i++){ // move
 			ChessBoard new_chessboard = chessboard;
 			
-			MakeMove(&new_chessboard, Moves[i].movenum(), 0); // 0: dummy
+			MakeMove(&new_chessboard, Moves[i].num(), 0); // 0: dummy
 			double t = -Nega_max(new_chessboard, &new_move, color^1, depth+1, remain_depth-1, -beta, -m); // nega max: flip sign of alpha and beta
 			if(t > m){ 
 				m = t;
-				*move = Moves[i].movenum();
+				*move = Moves[i].num();
 			}else if(t == m){
 				bool r = rand()%2;
-				if(r) *move = Moves[i].movenum();
+				if(r) *move = Moves[i].num();
 			}
 			if (m >= beta) return beta;
 		}
