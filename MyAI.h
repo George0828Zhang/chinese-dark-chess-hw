@@ -13,7 +13,8 @@
 #define CHESS_EMPTY -2
 #define COMMAND_NUM 18
 
-struct ChessBoard{
+class ChessBoard{
+public:
 	int Board[32];
 	int CoverChess[14];
 	int Red_Chess_Num, Black_Chess_Num;
@@ -40,6 +41,10 @@ public:
 		return from_location_no * 100 + to_location_no;
 	}
 };
+
+template <typename T> int sgn(T val) {
+    return (T(0) < val) - (val < T(0));
+}
 
 class MyAI  
 {

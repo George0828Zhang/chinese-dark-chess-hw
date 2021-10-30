@@ -573,19 +573,25 @@ double MyAI::Evaluate(const ChessBoard* chessboard,
 	return score;
 }
 
-bool movecomp(const MoveInfo &a, const MoveInfo &b){
-	// returns ​true if the first argument is ordered before the second.
-	if (a.to_chess_no==CHESS_EMPTY)
-		return false; // no eat is worse
-	if (b.to_chess_no==CHESS_EMPTY)
-		return true; // eat is better
-	if (a.to_chess_no % 7 > b.to_chess_no % 7)
-		return true; // eat bigger the better
-	else if (a.to_chess_no % 7 == b.to_chess_no % 7){
-		if (a.from_chess_no % 7 <= b.from_chess_no % 7)
-			return true; // use smaller to eat the better
-	}
-	return false;
+static inline bool movecomp(const MoveInfo &a, const MoveInfo &b){
+	/* 
+	returns ​true if the first argument is ordered before the second.
+	1. CHESS_EMPTY => -2 mod 7 is still -2
+	2. 'to' bigger the better, more important
+	3. 'from' smaller the better, less important
+	*/
+	return ((a.to_chess_no % 7) * 10 + 6 - (a.from_chess_no % 7)) > ((b.to_chess_no % 7) * 10 + 6 - (b.from_chess_no % 7));
+	// if (a.to_chess_no==CHESS_EMPTY)
+	// 	return false; // no eat is worse
+	// if (b.to_chess_no==CHESS_EMPTY)
+	// 	return true; // eat is better
+	// if (a.to_chess_no % 7 > b.to_chess_no % 7)
+	// 	return true; // eat bigger the better
+	// else if (a.to_chess_no % 7 == b.to_chess_no % 7){
+	// 	if (a.from_chess_no % 7 <= b.from_chess_no % 7)
+	// 		return true; // use smaller to eat the better
+	// }
+	// return false;
 }
 double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth, double alpha, double beta){
 
@@ -595,10 +601,6 @@ double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, c
 	// move
 	move_count = Expand(chessboard.Board, color, Moves);
 	std::sort(Moves, Moves + move_count, movecomp);
-	// if (depth == 4 && move_count > 1)
-	// {
-	// 	fprintf(stderr, "[DEBUG] Move 0vs1: (%d %d) > (%d %d)\n", Moves[0].from_chess_no % 7, Moves[0].to_chess_no % 7, Moves[1].from_chess_no % 7, Moves[1].to_chess_no % 7);
-	// }
 
 	if(isTimeUp() || // time is up
 		remain_depth == 0 || // reach limit of depth
@@ -612,13 +614,15 @@ double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, c
 	}else{
 		double m = alpha; // initialize with alpha instead
 		int new_move;
+		double decay = 0.0005; // prefer shallow solution (?)
 		// search deeper
 		for(int i = 0; i < move_count; i++){ // move
 			ChessBoard new_chessboard = chessboard;
 			
 			MakeMove(&new_chessboard, Moves[i].num(), 0); // 0: dummy
 			double t = -Nega_max(new_chessboard, &new_move, color^1, depth+1, remain_depth-1, -beta, -m); // nega max: flip sign of alpha and beta
-			if(t > m){ 
+			if (t * (1 - sgn(t) * decay) > m)
+			{
 				m = t;
 				*move = Moves[i].num();
 			}
@@ -627,8 +631,8 @@ double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, c
 			// 	if(r) *move = Moves[i].num();
 			// }
 			if (m >= beta){
-				if (depth < 3)
-					fprintf(stderr, "[DEBUG] %d, %.3lf, %.3lf, %.3lf\n", depth, alpha, beta, m);
+				// if (depth < 3)
+				// 	fprintf(stderr, "[DEBUG] %d, %.3lf, %.3lf, %.3lf\n", depth, alpha, beta, m);
 				return m;
 			}
 		}
