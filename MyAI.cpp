@@ -244,8 +244,10 @@ void MyAI::initBoardState()
 	main_chessboard.Black_Chess_Num = 16;
 	main_chessboard.NoEatFlip = 0;
 	// main_chessboard.HistoryCount = 0;
-	main_chessboard.red_chess_loc = std::vector<int>();
-	main_chessboard.black_chess_loc = std::vector<int>();
+	// main_chessboard.red_chess_loc = std::vector<int>();
+	// main_chessboard.black_chess_loc = std::vector<int>();
+	main_chessboard.RedHead = -1;
+	main_chessboard.BlackHead = -1;
 
 	//convert to my format
 	int Index = 0;
@@ -254,6 +256,8 @@ void MyAI::initBoardState()
 		for(int j=0;j<4;j++)
 		{
 			main_chessboard.Board[Index] = CHESS_COVER;
+			main_chessboard.Prev[Index] = -1;
+			main_chessboard.Next[Index] = -1;
 			Index++;
 		}
 	}
@@ -312,10 +316,60 @@ void MyAI::generateMove(char move[6])
 	this->Pirnf_Chessboard();
 }
 
-void printVec(std::vector<int> &vec){
+void printVec(const std::vector<int> &vec){
+	fprintf(stderr, ">");
 	for (auto& i: vec)
-		fprintf(stderr, "%d ", i);
+		fprintf(stderr, "%2d ", i);
 	fprintf(stderr, "\n");
+}
+
+void removeFromBoard(ChessBoard* chessboard, int at){
+	int left = chessboard->Prev[at];
+	int right = chessboard->Next[at];
+	if (left != -1)
+		chessboard->Next[left] = right;
+	if (right != -1)
+		chessboard->Prev[right] = left;
+	chessboard->Prev[at] = -1;
+	chessboard->Next[at] = -1;
+	if (chessboard->RedHead == at)
+		chessboard->RedHead = right;
+	if (chessboard->BlackHead == at)
+		chessboard->BlackHead = right;
+}
+
+void insertInBoard(ChessBoard* chessboard, int at){
+	int color = chessboard->Board[at] / 7;
+	if (color == RED){
+		if (chessboard->RedHead == -1 || chessboard->RedHead > at)
+			chessboard->RedHead = at;
+	}
+	else{
+		if (chessboard->BlackHead == -1 || chessboard->BlackHead > at)
+			chessboard->BlackHead = at;
+	}
+
+	int left = -1, right = -1;
+	for(int i = at+1; i < 32; i++){
+		if (chessboard->Board[i] >= 0 && chessboard->Board[i] / 7 == color){
+			right = i;
+			break;
+		}
+	}
+	for(int i = at-1; i >= 0; i--){
+		if (chessboard->Board[i] >= 0 && chessboard->Board[i] / 7 == color){
+			left = i;
+			break;
+		}
+	}
+	chessboard->Prev[at] = left;
+	chessboard->Next[at] = right;
+	if (left != -1){
+		chessboard->Next[left] = at;
+	}
+	if (right != -1){
+		chessboard->Prev[right] = at;
+	}
 }
 
 void MyAI::MakeMove(ChessBoard* chessboard, const int move, const int chess){
@@ -324,35 +378,24 @@ void MyAI::MakeMove(ChessBoard* chessboard, const int move, const int chess){
 		chessboard->Board[src] = chess;
 		chessboard->CoverChess[chess]--;
 		chessboard->NoEatFlip = 0;
-		if (chess / 7 == 0){ // red
-			chessboard->red_chess_loc.push_back(src);
-		}
-		else{
-			chessboard->black_chess_loc.push_back(src);
-		}
+		insertInBoard(chessboard, src);
 	}else { // move
 		if(chessboard->Board[dst] != CHESS_EMPTY){
 			if(chessboard->Board[dst] / 7 == 0){ // red
 				(chessboard->Red_Chess_Num)--;
-				vectorRemove(chessboard->red_chess_loc, dst);
 			}else{ // black
 				(chessboard->Black_Chess_Num)--;
-				vectorRemove(chessboard->black_chess_loc, dst);
 			}
+			removeFromBoard(chessboard, dst);
 			chessboard->NoEatFlip = 0;
 		}else{
 			chessboard->NoEatFlip += 1;
 		}
-		if (chessboard->Board[src] / 7 == 0){ // red
-			vectorReplace(chessboard->red_chess_loc, src, dst);
-		}
-		else{
-			vectorReplace(chessboard->black_chess_loc, src, dst);
-		}
 		chessboard->Board[dst] = chessboard->Board[src];
-		chessboard->Board[src] = CHESS_EMPTY;		
+		chessboard->Board[src] = CHESS_EMPTY;
+		removeFromBoard(chessboard, src);
+		insertInBoard(chessboard, dst);
 	}
-	// chessboard->History[chessboard->HistoryCount++] = move;
 	chessboard->History.push_back(move);
 }
 
@@ -374,9 +417,10 @@ void MyAI::MakeMove(ChessBoard* chessboard, const char move[6])
 
 void MyAI::Expand(const ChessBoard *chessboard, const int color, std::vector<MoveInfo> &Result)
 {
-	std::vector<int> chess_loc = (color == RED) ? chessboard->red_chess_loc : chessboard->black_chess_loc;
+	int i = (color == RED) ? chessboard->RedHead : chessboard->BlackHead;
 	const int *board = chessboard->Board;
-	for(auto& i : chess_loc) {
+
+	for (; i != -1; i = chessboard->Next[i]){
 		// Cannon
 		if(board[i] % 7 == 1)
 		{

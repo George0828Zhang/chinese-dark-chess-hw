@@ -17,12 +17,12 @@
 class ChessBoard{
 public:
 	int Board[32];
+	int Prev[32];
+	int Next[32];
+	int RedHead, BlackHead;
 	int CoverChess[14];
 	int Red_Chess_Num, Black_Chess_Num;
-	std::vector<int> red_chess_loc, black_chess_loc;
 	int NoEatFlip;
-	// int History[4096];
-	// int HistoryCount;
 	std::vector<int> History;
 };
 
