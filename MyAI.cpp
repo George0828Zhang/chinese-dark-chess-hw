@@ -3,7 +3,7 @@
 #include "MyAI.h"
 #include <algorithm>
 #include <vector>
-#include <cassert>
+// #include <cassert>
 
 #define TIME_LIMIT 9.5
 
@@ -591,14 +591,146 @@ bool MyAI::Referee(const int* chess, const int from_location_no, const int to_lo
 	return IsCurrent;
 }
 
+void debug_Chess(int chess_no, char *Result)
+{
+	// XX -> Empty
+	if (chess_no == CHESS_EMPTY)
+	{
+		strcat(Result, " - ");
+		return;
+	}
+	// OO -> DarkChess
+	else if (chess_no == CHESS_COVER)
+	{
+		strcat(Result, " X ");
+		return;
+	}
+
+	switch (chess_no)
+	{
+	case 0:
+		strcat(Result, " P ");
+		break;
+	case 1:
+		strcat(Result, " C ");
+		break;
+	case 2:
+		strcat(Result, " N ");
+		break;
+	case 3:
+		strcat(Result, " R ");
+		break;
+	case 4:
+		strcat(Result, " M ");
+		break;
+	case 5:
+		strcat(Result, " G ");
+		break;
+	case 6:
+		strcat(Result, " K ");
+		break;
+	case 7:
+		strcat(Result, " p ");
+		break;
+	case 8:
+		strcat(Result, " c ");
+		break;
+	case 9:
+		strcat(Result, " n ");
+		break;
+	case 10:
+		strcat(Result, " r ");
+		break;
+	case 11:
+		strcat(Result, " m ");
+		break;
+	case 12:
+		strcat(Result, " g ");
+		break;
+	case 13:
+		strcat(Result, " k ");
+		break;
+	}
+}
+
+//Display chess board
+void debug_Chessboard(const ChessBoard *chessboard, const int color)
+{
+	char Mes[1024] = "";
+	char temp[1024];
+	char myColor[10] = "";
+	if (color == -99)
+		strcpy(myColor, "Unknown");
+	else if (color == RED)
+		strcpy(myColor, "Red");
+	else
+		strcpy(myColor, "Black");
+	sprintf(temp, "------------%s-------------\n", myColor);
+	strcat(Mes, temp);
+	strcat(Mes, "<8> ");
+	for (int i = 0; i < 32; i++)
+	{
+		if (i != 0 && i % 4 == 0)
+		{
+			sprintf(temp, "\n<%d> ", 8 - (i / 4));
+			strcat(Mes, temp);
+		}
+		char chess_name[4] = "";
+		debug_Chess(chessboard->Board[i], chess_name);
+		sprintf(temp, "%5s", chess_name);
+		strcat(Mes, temp);
+	}
+	strcat(Mes, "\n\n     ");
+	for (int i = 0; i < 4; i++)
+	{
+		sprintf(temp, " <%c> ", 'a' + i);
+		strcat(Mes, temp);
+	}
+	strcat(Mes, "\n\n");
+	fprintf(stderr, "%s", Mes);
+}
+
+double evalColor(const ChessBoard *chessboard, const std::vector<MoveInfo> &Moves, const int color)
+{
+	/* 
+	Need to return value between 0 ~ +1 
+	static material values
+	cover and empty are both zero
+	max value = 1*5 + 180*2 + 6*2 + 18*2 + 90*2 + 270*2 + 810*1 = 1943
+	max mobility = 12 + 12 + 14 + 14 = 52 (can right + can left + up + down, ignore cannon.)
+	if cannon: +(-3+7)*2 (cannon is best at middle border, near=3, target=7)
+		= 60
+	*/
+	static const double values[14] = {
+		1, 180, 6, 18, 90, 270, 810,
+		1, 180, 6, 18, 90, 270, 810};
+	static const double weights[2] = {0.5, 0.5};
+	static const double maxval[2] = {1943, 60};
+	double mobilities[32] = {0};
+	for(auto& m: Moves){
+		mobilities[m.from_location_no]++;
+	}
+
+	double material = 0, mobi = 0;
+	int head = (color==RED) ? chessboard->RedHead : chessboard->BlackHead;
+	for (int i = head; i != -1; i = chessboard->Next[i])
+	{
+		material += values[chessboard->Board[i]] / maxval[0];
+		mobi += mobilities[i] / maxval[1];
+	}
+	double value = material * weights[0] + mobi * weights[1];
+	return value;
+}
+
 // always use my point of view, so use this->Color
 double MyAI::Evaluate(const ChessBoard* chessboard, 
-	const int legal_move_count, const int color){
+	const std::vector<MoveInfo>& Moves, const int color){
 	// score = My Score - Opponent's Score
 	// offset = <WIN + BONUS> to let score always not less than zero
 
 	double score = OFFSET;
 	bool finish;
+	int legal_move_count = Moves.size();
 
 	if(legal_move_count == 0){ // Win, Lose
 		if(color == this->Color){ // Lose
@@ -613,26 +745,43 @@ double MyAI::Evaluate(const ChessBoard* chessboard,
 	}else{ // no conclusion
 		// static material values
 		// cover and empty are both zero
-		static const double values[14] = {
-			  1,180,  6, 18, 90,270,810,  
-			  1,180,  6, 18, 90,270,810
-		};
+		// static const double values[14] = {
+		// 	  1,180,  6, 18, 90,270,810,
+		// 	  1,180,  6, 18, 90,270,810
+		// };
 		
-		double piece_value = 0;
-		for(int i = 0; i < 32; i++){
-			if(chessboard->Board[i] != CHESS_EMPTY && 
-				chessboard->Board[i] != CHESS_COVER){
-				if(chessboard->Board[i] / 7 == this->Color){
-					piece_value += values[chessboard->Board[i]];
-				}else{
-					piece_value -= values[chessboard->Board[i]];
-				}
-			}
+		// Material
+		std::vector<MoveInfo> redMoves, blackMoves;
+		if(color==RED){
+			redMoves = Moves;
+			Expand(chessboard, BLACK, blackMoves);
 		}
-		// linear map to (-<WIN>, <WIN>)
+		else{
+			blackMoves = Moves;
+			Expand(chessboard, RED, redMoves);
+		}
+		
+		double piece_value;
+		double red_value = evalColor(chessboard, redMoves, RED);
+		double black_value = evalColor(chessboard, blackMoves, BLACK);
+		piece_value = (red_value - black_value) * (this->Color == RED ? 1 : -1);
+
+		// for(int i = 0; i < 32; i++){
+		// 	if(chessboard->Board[i] != CHESS_EMPTY && 
+		// 		chessboard->Board[i] != CHESS_COVER){
+		// 		if(chessboard->Board[i] / 7 == this->Color){
+		// 			piece_value += values[chessboard->Board[i]];
+		// 		}else{
+		// 			piece_value -= values[chessboard->Board[i]];
+		// 		}
+		// 	}
+		// }
+
+				// linear map to (-<WIN>, <WIN>)
 		// score max value = 1*5 + 180*2 + 6*2 + 18*2 + 90*2 + 270*2 + 810*1 = 1943
 		// <ORIGINAL_SCORE> / <ORIGINAL_SCORE_MAX_VALUE> * (<WIN> - 0.01)
-		piece_value = piece_value / 1943 * (WIN - 0.01);
+		piece_value = piece_value / 1.0 * (WIN - 0.01);
+
 		score += piece_value; 
 		finish = false;
 	}
@@ -697,7 +846,7 @@ double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, c
 		){
 		this->node++;
 		// odd: *-1, even: *1
-		return Evaluate(&chessboard, move_count, color) * (depth&1 ? -1 : 1);
+		return Evaluate(&chessboard, Moves, color) * (depth & 1 ? -1 : 1);
 	}else{
 		double m = alpha; // initialize with alpha instead
 		int new_move;
@@ -863,5 +1012,3 @@ void MyAI::Pirnf_Chess(int chess_no,char *Result){
 			break;
 	}
 }
-
-

@@ -110,7 +110,7 @@ private:
 	bool Referee(const int *board, const int Startoint, const int EndPoint, const int color);
 	// void Expand(const int *board, const int color, std::vector<MoveInfo> &Result);
 	void Expand(const ChessBoard *chessboard, const int color, std::vector<MoveInfo> &Result);
-	double Evaluate(const ChessBoard* chessboard, const int legal_move_count, const int color);
+	double Evaluate(const ChessBoard *chessboard, const std::vector<MoveInfo> &Moves, const int color);
 	double Nega_max(ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth, const double alpha, const double beta);
 	bool isDraw(const ChessBoard* chessboard);
 
