@@ -3,6 +3,7 @@
 #include "MyAI.h"
 #include <algorithm>
 #include <vector>
+#include <cassert>
 
 #define TIME_LIMIT 9.5
 
@@ -16,6 +17,34 @@
 
 #define NOEATFLIP_LIMIT 60
 #define POSITION_REPETITION_LIMIT 3
+
+void vectorRemove(std::vector<int>& vec, int value){
+	/* assumes value in vec is unique */
+	std::vector<int>::iterator position = std::find(vec.begin(), vec.end(), value);
+	if (position != vec.end())
+		vec.erase(position);
+	return;
+}
+void vectorReplace(std::vector<int>& vec, int value, int replace){
+	/* assumes value in vec is unique */
+	std::vector<int>::iterator position = std::find(vec.begin(), vec.end(), value);
+	if (position != vec.end())
+		*position = replace;
+	return;
+}
+
+MoveInfo::MoveInfo(){}
+MoveInfo::MoveInfo(const int *board, int from, int to)
+{
+	from_location_no = from;
+	to_location_no = to;
+	from_chess_no = board[from];
+	to_chess_no = board[to];
+}
+inline int MoveInfo::num()
+{
+	return from_location_no * 100 + to_location_no;
+}
 
 MyAI::MyAI(void){}
 
@@ -106,7 +135,7 @@ bool MyAI::genmove(const char* data[], char* response){
 		this->Color = 2;
 	}
 	// genmove
-  char move[6];
+  	char move[6];
 	this->generateMove(move);
 	sprintf(response, "%c%c %c%c", move[0], move[1], move[3], move[4]);
 	return 0;
@@ -214,7 +243,9 @@ void MyAI::initBoardState()
 	main_chessboard.Red_Chess_Num = 16;
 	main_chessboard.Black_Chess_Num = 16;
 	main_chessboard.NoEatFlip = 0;
-	main_chessboard.HistoryCount = 0;
+	// main_chessboard.HistoryCount = 0;
+	main_chessboard.red_chess_loc = std::vector<int>();
+	main_chessboard.black_chess_loc = std::vector<int>();
 
 	//convert to my format
 	int Index = 0;
@@ -281,27 +312,48 @@ void MyAI::generateMove(char move[6])
 	this->Pirnf_Chessboard();
 }
 
+void printVec(std::vector<int> &vec){
+	for (auto& i: vec)
+		fprintf(stderr, "%d ", i);
+	fprintf(stderr, "\n");
+}
+
 void MyAI::MakeMove(ChessBoard* chessboard, const int move, const int chess){
 	int src = move/100, dst = move%100;
 	if(src == dst){ // flip
 		chessboard->Board[src] = chess;
 		chessboard->CoverChess[chess]--;
 		chessboard->NoEatFlip = 0;
+		if (chess / 7 == 0){ // red
+			chessboard->red_chess_loc.push_back(src);
+		}
+		else{
+			chessboard->black_chess_loc.push_back(src);
+		}
 	}else { // move
 		if(chessboard->Board[dst] != CHESS_EMPTY){
 			if(chessboard->Board[dst] / 7 == 0){ // red
 				(chessboard->Red_Chess_Num)--;
+				vectorRemove(chessboard->red_chess_loc, dst);
 			}else{ // black
 				(chessboard->Black_Chess_Num)--;
+				vectorRemove(chessboard->black_chess_loc, dst);
 			}
 			chessboard->NoEatFlip = 0;
 		}else{
 			chessboard->NoEatFlip += 1;
 		}
+		if (chessboard->Board[src] / 7 == 0){ // red
+			vectorReplace(chessboard->red_chess_loc, src, dst);
+		}
+		else{
+			vectorReplace(chessboard->black_chess_loc, src, dst);
+		}
 		chessboard->Board[dst] = chessboard->Board[src];
-		chessboard->Board[src] = CHESS_EMPTY;
+		chessboard->Board[src] = CHESS_EMPTY;		
 	}
-	chessboard->History[chessboard->HistoryCount++] = move;
+	// chessboard->History[chessboard->HistoryCount++] = move;
+	chessboard->History.push_back(move);
 }
 
 void MyAI::MakeMove(ChessBoard* chessboard, const char move[6])
@@ -647,7 +699,7 @@ bool MyAI::isDraw(const ChessBoard* chessboard){
 	}
 
 	// Position Repetition
-	int last_idx = chessboard->HistoryCount - 1;
+	int last_idx = chessboard->History.size() - 1; //chessboard->HistoryCount - 1;
 	// -2: my previous ply
 	int idx = last_idx - 2;
 	// All ply must be move type

@@ -6,6 +6,7 @@
 #include <string.h>
 #include <math.h>
 #include <time.h>
+#include <vector>
 
 #define RED 0
 #define BLACK 1
@@ -18,9 +19,11 @@ public:
 	int Board[32];
 	int CoverChess[14];
 	int Red_Chess_Num, Black_Chess_Num;
+	std::vector<int> red_chess_loc, black_chess_loc;
 	int NoEatFlip;
-	int History[4096];
-	int HistoryCount;
+	// int History[4096];
+	// int HistoryCount;
+	std::vector<int> History;
 };
 
 class MoveInfo{
@@ -29,17 +32,9 @@ public:
 	int to_chess_no;
 	int from_location_no;
 	int to_location_no;
-	MoveInfo() {} // uninitialized
-	MoveInfo(const int *board, int from, int to)
-	{
-		from_location_no = from;
-		to_location_no = to;
-		from_chess_no = board[from];
-		to_chess_no = board[to];
-	}
-	inline int num(){
-		return from_location_no * 100 + to_location_no;
-	}
+	MoveInfo();
+	MoveInfo(const int *board, int from, int to);
+	inline int num();
 };
 
 template <typename T> int sgn(T val) {
