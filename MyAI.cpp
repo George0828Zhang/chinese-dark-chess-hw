@@ -2,6 +2,7 @@
 #include "time.h"
 #include "MyAI.h"
 #include <algorithm>
+#include <vector>
 
 #define TIME_LIMIT 9.5
 
@@ -238,7 +239,7 @@ void MyAI::generateMove(char move[6])
 	begin = clock();
 
 	// iterative-deeping, start from 3, time limit = <TIME_LIMIT> sec
-	for(int depth = 3; (double)(clock() - begin) / CLOCKS_PER_SEC < TIME_LIMIT; ++depth){
+	for(int depth = 3; (double)(clock() - begin) / CLOCKS_PER_SEC < TIME_LIMIT; depth+=2){
 		this->node = 0;
 		int best_move_tmp; double t_tmp;
 
@@ -620,11 +621,16 @@ double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, c
 			if(t > m){ 
 				m = t;
 				*move = Moves[i].num();
-			}else if(t == m){
-				bool r = rand()%2;
-				if(r) *move = Moves[i].num();
 			}
-			if (m >= beta) return beta;
+			// else if(t == m){
+			// 	bool r = rand()%2;
+			// 	if(r) *move = Moves[i].num();
+			// }
+			if (m >= beta){
+				if (depth < 3)
+					fprintf(stderr, "[DEBUG] %d, %.3lf, %.3lf, %.3lf\n", depth, alpha, beta, m);
+				return m;
+			}
 		}
 		return m;
 	}
