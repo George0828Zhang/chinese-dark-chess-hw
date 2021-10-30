@@ -372,53 +372,45 @@ void MyAI::MakeMove(ChessBoard* chessboard, const char move[6])
 	Pirnf_Chessboard();
 }
 
-int MyAI::Expand(const int* board, const int color,MoveInfo *Result)
+void MyAI::Expand(const ChessBoard *chessboard, const int color, std::vector<MoveInfo> &Result)
 {
-	int ResultCount = 0;
-	for(int i=0;i<32;i++)
-	{
-		if(board[i] >= 0 && board[i]/7 == color)
+	std::vector<int> chess_loc = (color == RED) ? chessboard->red_chess_loc : chessboard->black_chess_loc;
+	const int *board = chessboard->Board;
+	for(auto& i : chess_loc) {
+		// Cannon
+		if(board[i] % 7 == 1)
 		{
-			//Gun
-			if(board[i] % 7 == 1)
+			int row = i/4;
+			int col = i%4;
+			for(int rowCount=row*4;rowCount<(row+1)*4;rowCount++)
 			{
-				int row = i/4;
-				int col = i%4;
-				for(int rowCount=row*4;rowCount<(row+1)*4;rowCount++)
+				if(Referee(board,i,rowCount,color))
 				{
-					if(Referee(board,i,rowCount,color))
-					{
-						Result[ResultCount] = MoveInfo(board, i, rowCount);
-						ResultCount++;
-					}
-				}
-				for(int colCount=col; colCount<32;colCount += 4)
-				{
-				
-					if(Referee(board,i,colCount,color))
-					{
-						Result[ResultCount] = MoveInfo(board, i, colCount);
-						ResultCount++;
-					}
+					Result.push_back(MoveInfo(board, i, rowCount));
 				}
 			}
-			else
+			for(int colCount=col; colCount<32;colCount += 4)
 			{
-				int Move[4] = {i-4,i+1,i+4,i-1};
-				for(int k=0; k<4;k++)
+
+				if(Referee(board,i,colCount,color))
 				{
-					
-					if(Move[k] >= 0 && Move[k] < 32 && Referee(board,i,Move[k],color))
-					{
-						Result[ResultCount] = MoveInfo(board, i, Move[k]);
-						ResultCount++;
-					}
+					Result.push_back(MoveInfo(board, i, colCount));
 				}
 			}
-		
-		};
+		}
+		else
+		{
+			int Move[4] = {i-4,i+1,i+4,i-1};
+			for(int k=0; k<4;k++)
+			{
+
+				if(Move[k] >= 0 && Move[k] < 32 && Referee(board,i,Move[k],color))
+				{
+					Result.push_back(MoveInfo(board, i, Move[k]));
+				}
+			}
+		}
 	}
-	return ResultCount;
 }
 
 
@@ -646,13 +638,12 @@ static inline bool movecomp(const MoveInfo &a, const MoveInfo &b){
 	// return false;
 }
 double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth, double alpha, double beta){
-
-	MoveInfo Moves[2048];
-	int move_count = 0;
+	std::vector<MoveInfo> Moves;
 
 	// move
-	move_count = Expand(chessboard.Board, color, Moves);
-	std::sort(Moves, Moves + move_count, movecomp);
+	Expand(&chessboard, color, Moves);
+	int move_count = Moves.size();
+	std::sort(Moves.begin(), Moves.end(), movecomp);
 
 	if(isTimeUp() || // time is up
 		remain_depth == 0 || // reach limit of depth
@@ -666,7 +657,7 @@ double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, c
 	}else{
 		double m = alpha; // initialize with alpha instead
 		int new_move;
-		double decay = 0.0005; // prefer shallow solution (?)
+		double decay = 0.0; // prefer shallow solution (?)
 		// search deeper
 		for(int i = 0; i < move_count; i++){ // move
 			ChessBoard new_chessboard = chessboard;
