@@ -7,12 +7,15 @@
 #include <math.h>
 #include <time.h>
 #include <vector>
+#include <random>
 
 #define RED 0
 #define BLACK 1
 #define CHESS_COVER -1
 #define CHESS_EMPTY -2
 #define COMMAND_NUM 18
+
+#define FOOTPRINTSZ 32*32*14
 
 class ChessBoard{
 public:
@@ -21,6 +24,9 @@ public:
 	int Next[32];
 	int RedHead, BlackHead;
 	int CoverChess[14];
+	int AliveChess[14];
+	// int Footprint[FOOTPRINTSZ];
+	// int MaxFootprint;
 	int Red_Chess_Num, Black_Chess_Num;
 	int NoEatFlip;
 	std::vector<int> History;
@@ -118,6 +124,10 @@ private:
 	void Pirnf_Chess(int chess_no,char *Result);
 	void Pirnf_Chessboard();
 	
+	// Random
+	std::random_device random_device;
+	std::mt19937 random_generator;
+	std::uniform_real_distribution<> random_uniform; //uniform distribution between 0 and 1
 };
 
 #endif

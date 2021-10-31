@@ -3,6 +3,7 @@
 #include "MyAI.h"
 #include <algorithm>
 #include <vector>
+#include <cmath>
 // #include <cassert>
 
 #define TIME_LIMIT 9.5
@@ -18,20 +19,20 @@
 #define NOEATFLIP_LIMIT 60
 #define POSITION_REPETITION_LIMIT 3
 
-void vectorRemove(std::vector<int>& vec, int value){
-	/* assumes value in vec is unique */
-	std::vector<int>::iterator position = std::find(vec.begin(), vec.end(), value);
-	if (position != vec.end())
-		vec.erase(position);
-	return;
-}
-void vectorReplace(std::vector<int>& vec, int value, int replace){
-	/* assumes value in vec is unique */
-	std::vector<int>::iterator position = std::find(vec.begin(), vec.end(), value);
-	if (position != vec.end())
-		*position = replace;
-	return;
-}
+// void vectorRemove(std::vector<int>& vec, int value){
+// 	/* assumes value in vec is unique */
+// 	std::vector<int>::iterator position = std::find(vec.begin(), vec.end(), value);
+// 	if (position != vec.end())
+// 		vec.erase(position);
+// 	return;
+// }
+// void vectorReplace(std::vector<int>& vec, int value, int replace){
+// 	/* assumes value in vec is unique */
+// 	std::vector<int>::iterator position = std::find(vec.begin(), vec.end(), value);
+// 	if (position != vec.end())
+// 		*position = replace;
+// 	return;
+// }
 
 MoveInfo::MoveInfo(){}
 MoveInfo::MoveInfo(const int *board, int from, int to)
@@ -239,7 +240,8 @@ int MyAI::ConvertChessNo(int input)
 void MyAI::initBoardState()
 {	
 	int iPieceCount[14] = {5, 2, 2, 2, 2, 2, 1, 5, 2, 2, 2, 2, 2, 1};
-	memcpy(main_chessboard.CoverChess,iPieceCount,sizeof(int)*14);
+	memcpy(main_chessboard.CoverChess, iPieceCount, sizeof(int) * 14);
+	memcpy(main_chessboard.AliveChess, iPieceCount, sizeof(int) * 14);
 	main_chessboard.Red_Chess_Num = 16;
 	main_chessboard.Black_Chess_Num = 16;
 	main_chessboard.NoEatFlip = 0;
@@ -248,6 +250,12 @@ void MyAI::initBoardState()
 	// main_chessboard.black_chess_loc = std::vector<int>();
 	main_chessboard.RedHead = -1;
 	main_chessboard.BlackHead = -1;
+	// memset(main_chessboard.Footprint, 0, sizeof(int) * FOOTPRINTSZ);
+	// main_chessboard.MaxFootprint = 0;
+
+	// std::random_device random_device;
+	random_generator = std::mt19937(random_device());
+	random_uniform = std::uniform_real_distribution<>(0.0, 1.0); //uniform distribution between 0 and 1
 
 	//convert to my format
 	int Index = 0;
@@ -257,7 +265,7 @@ void MyAI::initBoardState()
 		{
 			main_chessboard.Board[Index] = CHESS_COVER;
 			main_chessboard.Prev[Index] = -1;
-			main_chessboard.Next[Index] = -1;
+			main_chessboard.Next[Index] = -1;			
 			Index++;
 		}
 	}
@@ -386,6 +394,7 @@ void MyAI::MakeMove(ChessBoard* chessboard, const int move, const int chess){
 			}else{ // black
 				(chessboard->Black_Chess_Num)--;
 			}
+			chessboard->AliveChess[chessboard->Board[dst]]--;
 			removeFromBoard(chessboard, dst);
 			chessboard->NoEatFlip = 0;
 		}else{
@@ -395,6 +404,13 @@ void MyAI::MakeMove(ChessBoard* chessboard, const int move, const int chess){
 		chessboard->Board[src] = CHESS_EMPTY;
 		removeFromBoard(chessboard, src);
 		insertInBoard(chessboard, dst);
+
+		// int addr = (src > dst ? (src*32+dst) : (dst*32+src))*14 + chess;
+		// chessboard->Footprint[addr]++;
+		// if (chessboard->Footprint[addr] > chessboard->MaxFootprint){
+		// 	chessboard->MaxFootprint = chessboard->Footprint[addr];
+		// 	// fprintf(stderr, "[DEBUG] footprint=%d\n", chessboard->MaxFootprint);
+		// }
 	}
 	chessboard->History.push_back(move);
 }
@@ -701,25 +717,49 @@ double evalColor(const ChessBoard *chessboard, const std::vector<MoveInfo> &Move
 	if cannon: +(-3+7)*2 (cannon is best at middle border, near=3, target=7)
 		= 60
 	*/
-	static const double values[14] = {
+	double values[14] = {
 		1, 180, 6, 18, 90, 270, 810,
 		1, 180, 6, 18, 90, 270, 810};
 	static const double weights[2] = {0.5, 0.5};
-	static const double maxval[2] = {1943, 60};
+	// static const double maxval[2] = {1943, 60};
 	double mobilities[32] = {0};
 	for(auto& m: Moves){
 		mobilities[m.from_location_no]++;
 	}
 
-	double material = 0, mobi = 0;
-	int head = (color==RED) ? chessboard->RedHead : chessboard->BlackHead;
+	for(int c = 0; c < 2; c++){
+		int op_king = (!c) * 7 + 6;
+		int my_pawn = c * 7 + 0;
+		if (chessboard->AliveChess[op_king] > 0){
+			if (chessboard->AliveChess[my_pawn] == 1)
+				values[my_pawn] = 800;
+			else if (chessboard->AliveChess[my_pawn] == 2)
+				values[my_pawn] = 6;
+		}
+	}
+
+	// repeat decay
+	// int max_visit = chessboard->MaxFootprint;
+	// double penalize = max_visit > 1 ? pow(0.975, max_visit - 1) : 1;
+
+	// double material = 0, mobi = 0;
+	// int head = (color==RED) ? chessboard->RedHead : chessboard->BlackHead;
+	// for (int i = head; i != -1; i = chessboard->Next[i])
+	// {
+	// 	material += values[chessboard->Board[i]] / maxval[0];
+	// 	mobi += mobilities[i] / maxval[1];
+	// }
+	// double value = material * weights[0] + mobi * weights[1];
+	double value = 0;
+	int head = (color == RED) ? chessboard->RedHead : chessboard->BlackHead;
 	for (int i = head; i != -1; i = chessboard->Next[i])
 	{
-		material += values[chessboard->Board[i]] / maxval[0];
-		mobi += mobilities[i] / maxval[1];
+		int chess = chessboard->Board[i];
+		double mat = values[chess];
+		double mob = mobilities[i];
+		value += mat * weights[0] + (mob / 7 * mat) * weights[1];
 	}
-	double value = material * weights[0] + mobi * weights[1];
-	return value;
+	return value / 1943;
 }
 
 // always use my point of view, so use this->Color
@@ -850,7 +890,7 @@ double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, c
 	}else{
 		double m = alpha; // initialize with alpha instead
 		int new_move;
-		double decay = 0.0; // prefer shallow solution (?)
+		double decay = 0.005; // prefer shallow solution (?)
 		// search deeper
 		for(int i = 0; i < move_count; i++){ // move
 			ChessBoard new_chessboard = chessboard;
@@ -863,12 +903,13 @@ double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, c
 				*move = Moves[i].num();
 			}
 			// else if(t == m){
-			// 	bool r = rand()%2;
-			// 	if(r) *move = Moves[i].num();
+			// 	// bool r = rand()%2;
+			// 	// prefer border route (maybe prevents repeat...?)
+			// 	int column = Moves[i].to_location_no % 4;
+			// 	if(Moves[i].to_location_no % 4 == 0 || )
+			// 		*move = Moves[i].num();
 			// }
 			if (m >= beta){
-				// if (depth < 3)
-				// 	fprintf(stderr, "[DEBUG] %d, %.3lf, %.3lf, %.3lf\n", depth, alpha, beta, m);
 				return m;
 			}
 		}
