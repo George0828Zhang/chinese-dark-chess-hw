@@ -122,12 +122,7 @@ private:
 
 	// Display
 	void Pirnf_Chess(int chess_no,char *Result);
-	void Pirnf_Chessboard();
-	
-	// Random
-	std::random_device random_device;
-	std::mt19937 random_generator;
-	std::uniform_real_distribution<> random_uniform; //uniform distribution between 0 and 1
+	void Pirnf_Chessboard();	
 };
 
 #endif

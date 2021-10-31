@@ -19,20 +19,9 @@
 #define NOEATFLIP_LIMIT 60
 #define POSITION_REPETITION_LIMIT 3
 
-// void vectorRemove(std::vector<int>& vec, int value){
-// 	/* assumes value in vec is unique */
-// 	std::vector<int>::iterator position = std::find(vec.begin(), vec.end(), value);
-// 	if (position != vec.end())
-// 		vec.erase(position);
-// 	return;
-// }
-// void vectorReplace(std::vector<int>& vec, int value, int replace){
-// 	/* assumes value in vec is unique */
-// 	std::vector<int>::iterator position = std::find(vec.begin(), vec.end(), value);
-// 	if (position != vec.end())
-// 		*position = replace;
-// 	return;
-// }
+// std::random_device rd;
+// std::mt19937 gen(rd());
+// std::uniform_real_distribution<> randdist(0,1); //uniform distribution between 0 and 1
 
 MoveInfo::MoveInfo(){}
 MoveInfo::MoveInfo(const int *board, int from, int to)
@@ -252,10 +241,6 @@ void MyAI::initBoardState()
 	main_chessboard.BlackHead = -1;
 	// memset(main_chessboard.Footprint, 0, sizeof(int) * FOOTPRINTSZ);
 	// main_chessboard.MaxFootprint = 0;
-
-	// std::random_device random_device;
-	random_generator = std::mt19937(random_device());
-	random_uniform = std::uniform_real_distribution<>(0.0, 1.0); //uniform distribution between 0 and 1
 
 	//convert to my format
 	int Index = 0;
@@ -713,15 +698,16 @@ double evalColor(const ChessBoard *chessboard, const std::vector<MoveInfo> &Move
 	static material values
 	cover and empty are both zero
 	max value = 1*5 + 180*2 + 6*2 + 18*2 + 90*2 + 270*2 + 810*1 = 1943
+	### modified: when pawn=1, max value would be=1943 - 4 + pro_p
 	max mobility = 12 + 12 + 14 + 14 = 52 (can right + can left + up + down, ignore cannon.)
 	if cannon: +(-3+7)*2 (cannon is best at middle border, near=3, target=7)
 		= 60
 	*/
+	static const double pro_p[2] = {820, 20};
 	double values[14] = {
 		1, 180, 6, 18, 90, 270, 810,
 		1, 180, 6, 18, 90, 270, 810};
 	static const double weights[2] = {0.5, 0.5};
-	// static const double maxval[2] = {1943, 60};
 	double mobilities[32] = {0};
 	for(auto& m: Moves){
 		mobilities[m.from_location_no]++;
@@ -732,9 +718,9 @@ double evalColor(const ChessBoard *chessboard, const std::vector<MoveInfo> &Move
 		int my_pawn = c * 7 + 0;
 		if (chessboard->AliveChess[op_king] > 0){
 			if (chessboard->AliveChess[my_pawn] == 1)
-				values[my_pawn] = 800;
+				values[my_pawn] = pro_p[0];
 			else if (chessboard->AliveChess[my_pawn] == 2)
-				values[my_pawn] = 6;
+				values[my_pawn] = pro_p[1];
 		}
 	}
 
@@ -754,12 +740,10 @@ double evalColor(const ChessBoard *chessboard, const std::vector<MoveInfo> &Move
 	int head = (color == RED) ? chessboard->RedHead : chessboard->BlackHead;
 	for (int i = head; i != -1; i = chessboard->Next[i])
 	{
-		int chess = chessboard->Board[i];
-		double mat = values[chess];
-		double mob = mobilities[i];
-		value += mat * weights[0] + (mob / 7 * mat) * weights[1];
+		// value += mat * weights[0] + (mob / 7 * mat) * weights[1];
+		value += values[chessboard->Board[i]] * weights[0] / (1943 - 4 + pro_p[0]) + mobilities[i] * weights[1] / 60;
 	}
-	return value / 1943;
+	return value;
 }
 
 // always use my point of view, so use this->Color
@@ -832,7 +816,7 @@ double MyAI::Evaluate(const ChessBoard* chessboard,
 			(this->Color == BLACK && chessboard->Red_Chess_Num < chessboard->Black_Chess_Num)){
 			if(!(legal_move_count == 0 && color == this->Color)){ // except Lose
 				double bonus = BONUS / BONUS_MAX_PIECE * 
-				(chessboard->Red_Chess_Num - chessboard->Black_Chess_Num);
+				abs(chessboard->Red_Chess_Num - chessboard->Black_Chess_Num);
 				if(bonus > BONUS){ bonus = BONUS; } // limit
 				score += bonus;
 			}
@@ -840,7 +824,7 @@ double MyAI::Evaluate(const ChessBoard* chessboard,
 			(this->Color == BLACK && chessboard->Red_Chess_Num > chessboard->Black_Chess_Num)){
 			if(!(legal_move_count == 0 && color != this->Color)){ // except Lose
 				double bonus = BONUS / BONUS_MAX_PIECE * 
-				(chessboard->Red_Chess_Num - chessboard->Black_Chess_Num);
+				abs(chessboard->Red_Chess_Num - chessboard->Black_Chess_Num);
 				if(bonus > BONUS){ bonus = BONUS; } // limit
 				score -= bonus;
 			}
@@ -856,19 +840,17 @@ static inline bool movecomp(const MoveInfo &a, const MoveInfo &b){
 	1. CHESS_EMPTY => -2 mod 7 is still -2
 	2. 'to' bigger the better, more important
 	3. 'from' smaller the better, less important
+	BUG: when eat=none, this will promote moving smaller chess, which is undesired.
 	*/
-	return ((a.to_chess_no % 7) * 10 + 6 - (a.from_chess_no % 7)) > ((b.to_chess_no % 7) * 10 + 6 - (b.from_chess_no % 7));
-	// if (a.to_chess_no==CHESS_EMPTY)
-	// 	return false; // no eat is worse
-	// if (b.to_chess_no==CHESS_EMPTY)
-	// 	return true; // eat is better
-	// if (a.to_chess_no % 7 > b.to_chess_no % 7)
-	// 	return true; // eat bigger the better
-	// else if (a.to_chess_no % 7 == b.to_chess_no % 7){
-	// 	if (a.from_chess_no % 7 <= b.from_chess_no % 7)
-	// 		return true; // use smaller to eat the better
-	// }
-	// return false;
+	int a_from = a.from_chess_no % 7;
+	int b_from = b.from_chess_no % 7;
+	int a_to = a.to_chess_no % 7;
+	int b_to = b.to_chess_no % 7;
+	int noise = rand() % 2;
+	int a_mask = sgn(a.to_chess_no); // && a.to_chess_no != CHESS_COVER;
+	int b_mask = sgn(b.to_chess_no); // && a.to_chess_no != CHESS_COVER;
+	return (a_to * 10 + (6 - a_from) * a_mask) * 2 > (b_to * 10 + (6 - b_from) * b_mask) * 2 + noise;
+	// return ((a.to_chess_no % 7) * 10 + 6 - (a.from_chess_no % 7)) * 2 > ((b.to_chess_no % 7) * 10 + 6 - (b.from_chess_no % 7)) * 2 + noise;
 }
 double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth, double alpha, double beta){
 	std::vector<MoveInfo> Moves;
@@ -890,25 +872,16 @@ double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, c
 	}else{
 		double m = alpha; // initialize with alpha instead
 		int new_move;
-		double decay = 0.005; // prefer shallow solution (?)
 		// search deeper
 		for(int i = 0; i < move_count; i++){ // move
 			ChessBoard new_chessboard = chessboard;
 			
 			MakeMove(&new_chessboard, Moves[i].num(), 0); // 0: dummy
 			double t = -Nega_max(new_chessboard, &new_move, color^1, depth+1, remain_depth-1, -beta, -m); // nega max: flip sign of alpha and beta
-			if (t * (1 - sgn(t) * decay) > m)
-			{
+			if (t > m){
 				m = t;
 				*move = Moves[i].num();
 			}
-			// else if(t == m){
-			// 	// bool r = rand()%2;
-			// 	// prefer border route (maybe prevents repeat...?)
-			// 	int column = Moves[i].to_location_no % 4;
-			// 	if(Moves[i].to_location_no % 4 == 0 || )
-			// 		*move = Moves[i].num();
-			// }
 			if (m >= beta){
 				return m;
 			}
