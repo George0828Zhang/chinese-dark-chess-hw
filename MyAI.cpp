@@ -239,8 +239,8 @@ void MyAI::initBoardState()
 	// main_chessboard.black_chess_loc = std::vector<int>();
 	main_chessboard.RedHead = -1;
 	main_chessboard.BlackHead = -1;
-	// memset(main_chessboard.Footprint, 0, sizeof(int) * FOOTPRINTSZ);
-	// main_chessboard.MaxFootprint = 0;
+	memset(main_chessboard.Footprint, 0, sizeof(int) * FOOTPRINTSZ);
+	memset(main_chessboard.Timestamp, -1, sizeof(int) * FOOTPRINTSZ);
 
 	//convert to my format
 	int Index = 0;
@@ -389,15 +389,11 @@ void MyAI::MakeMove(ChessBoard* chessboard, const int move, const int chess){
 		chessboard->Board[src] = CHESS_EMPTY;
 		removeFromBoard(chessboard, src);
 		insertInBoard(chessboard, dst);
-
-		// int addr = (src > dst ? (src*32+dst) : (dst*32+src))*14 + chess;
-		// chessboard->Footprint[addr]++;
-		// if (chessboard->Footprint[addr] > chessboard->MaxFootprint){
-		// 	chessboard->MaxFootprint = chessboard->Footprint[addr];
-		// 	// fprintf(stderr, "[DEBUG] footprint=%d\n", chessboard->MaxFootprint);
-		// }
 	}
 	chessboard->History.push_back(move);
+	// chessboard->RepeatAt.push_back(chessboard->Footprint[move]);
+	chessboard->Timestamp[move] = chessboard->History.size() - 1;
+	chessboard->Footprint[move]++;
 }
 
 void MyAI::MakeMove(ChessBoard* chessboard, const char move[6])
@@ -852,6 +848,12 @@ static inline bool movecomp(const MoveInfo &a, const MoveInfo &b){
 	return (a_to * 10 + (6 - a_from) * a_mask) * 2 > (b_to * 10 + (6 - b_from) * b_mask) * 2 + noise;
 	// return ((a.to_chess_no % 7) * 10 + 6 - (a.from_chess_no % 7)) * 2 > ((b.to_chess_no % 7) * 10 + 6 - (b.from_chess_no % 7)) * 2 + noise;
 }
+bool QuiescentSearch(const ChessBoard *chessboard, const int color){
+	/* SEE 
+	If net gain < 0 --> quiesent
+	*/
+
+}
 double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth, double alpha, double beta){
 	std::vector<MoveInfo> Moves;
 
@@ -878,6 +880,19 @@ double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, c
 			
 			MakeMove(&new_chessboard, Moves[i].num(), 0); // 0: dummy
 			double t = -Nega_max(new_chessboard, &new_move, color^1, depth+1, remain_depth-1, -beta, -m); // nega max: flip sign of alpha and beta
+
+			// check 'current' chess board for repetition
+			int prev_mv_id = chessboard.Timestamp[Moves[i].num()];
+			int prev_new_mv_id = chessboard.Timestamp[new_move];
+			int repeats = chessboard.Footprint[Moves[i].num()];
+			if (color == this->Color &&
+				prev_mv_id != -1 &&
+				prev_new_mv_id != -1 &&
+				prev_new_mv_id - prev_mv_id == 1 &&
+				chessboard.History.size() - prev_mv_id <= 10) // repetition in 10 steps
+			{
+				t -= 0.5*pow(2.0, repeats-1); // heavy penalty for repetition on my side
+			}
 			if (t > m){
 				m = t;
 				*move = Moves[i].num();

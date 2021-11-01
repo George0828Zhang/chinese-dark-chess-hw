@@ -15,7 +15,7 @@
 #define CHESS_EMPTY -2
 #define COMMAND_NUM 18
 
-#define FOOTPRINTSZ 32*32*14
+#define FOOTPRINTSZ 3132
 
 class ChessBoard{
 public:
@@ -25,11 +25,12 @@ public:
 	int RedHead, BlackHead;
 	int CoverChess[14];
 	int AliveChess[14];
-	// int Footprint[FOOTPRINTSZ];
-	// int MaxFootprint;
 	int Red_Chess_Num, Black_Chess_Num;
 	int NoEatFlip;
 	std::vector<int> History;
+	// std::vector<int> RepeatAt;
+	int Footprint[FOOTPRINTSZ];
+	int Timestamp[FOOTPRINTSZ];
 };
 
 class MoveInfo{
@@ -119,6 +120,7 @@ private:
 	double Evaluate(const ChessBoard *chessboard, const std::vector<MoveInfo> &Moves, const int color);
 	double Nega_max(ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth, const double alpha, const double beta);
 	bool isDraw(const ChessBoard* chessboard);
+	bool QuiescentSearch(const ChessBoard *chessboard, const int color);
 
 	// Display
 	void Pirnf_Chess(int chess_no,char *Result);
