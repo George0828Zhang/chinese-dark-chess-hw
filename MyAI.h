@@ -120,7 +120,7 @@ private:
 	double Evaluate(const ChessBoard *chessboard, const std::vector<MoveInfo> &Moves, const int color);
 	double Nega_max(ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth, const double alpha, const double beta);
 	bool isDraw(const ChessBoard* chessboard);
-	bool QuiescentSearch(const ChessBoard *chessboard, const int color);
+	double SEE(const ChessBoard *chessboard, const int position, const int color);
 
 	// Display
 	void Pirnf_Chess(int chess_no,char *Result);

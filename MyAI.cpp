@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <vector>
 #include <cmath>
-// #include <cassert>
+#include <cassert>
 
 #define TIME_LIMIT 9.5
 
@@ -18,10 +18,6 @@
 
 #define NOEATFLIP_LIMIT 60
 #define POSITION_REPETITION_LIMIT 3
-
-// std::random_device rd;
-// std::mt19937 gen(rd());
-// std::uniform_real_distribution<> randdist(0,1); //uniform distribution between 0 and 1
 
 MoveInfo::MoveInfo(){}
 MoveInfo::MoveInfo(const int *board, int from, int to)
@@ -771,19 +767,13 @@ double MyAI::Evaluate(const ChessBoard* chessboard,
 		// };
 		
 		// Material
-		std::vector<MoveInfo> redMoves, blackMoves;
-		if(color==RED){
-			redMoves = Moves;
-			Expand(chessboard, BLACK, blackMoves);
-		}
-		else{
-			blackMoves = Moves;
-			Expand(chessboard, RED, redMoves);
-		}
+		std::vector<MoveInfo> otherMoves;
+
+		Expand(chessboard, (color == RED) ? BLACK : RED, otherMoves);
 		
 		double piece_value;
-		double red_value = evalColor(chessboard, redMoves, RED);
-		double black_value = evalColor(chessboard, blackMoves, BLACK);
+		double red_value = evalColor(chessboard, (color == RED) ? Moves : otherMoves, RED);
+		double black_value = evalColor(chessboard, (color == BLACK) ? Moves : otherMoves, BLACK);
 		piece_value = (red_value - black_value) * (this->Color == RED ? 1 : -1);
 
 		// for(int i = 0; i < 32; i++){
@@ -848,11 +838,91 @@ static inline bool movecomp(const MoveInfo &a, const MoveInfo &b){
 	return (a_to * 10 + (6 - a_from) * a_mask) * 2 > (b_to * 10 + (6 - b_from) * b_mask) * 2 + noise;
 	// return ((a.to_chess_no % 7) * 10 + 6 - (a.from_chess_no % 7)) * 2 > ((b.to_chess_no % 7) * 10 + 6 - (b.from_chess_no % 7)) * 2 + noise;
 }
-bool QuiescentSearch(const ChessBoard *chessboard, const int color){
-	/* SEE 
-	If net gain < 0 --> quiesent
-	*/
+double MyAI::SEE(const ChessBoard *chessboard, const int position, const int color){
+	if(!(position >= 0 && position < 32) ||
+	chessboard->Board[position] < 0 ||
+	(chessboard->Board[position] / 7) != color) return 0;
 
+	std::vector<int> RedCands, BlackCands;
+	int board[32];
+	memcpy(board, chessboard->Board, sizeof(int)*32);
+	for(int i = chessboard->RedHead; i != -1; i = chessboard->Next[i]){
+		if (board[i] % 7 == 1 || // Cannon
+			(i == position - 4) || // neighbors
+			(i == position - 1) ||
+			(i == position + 4) ||
+			(i == position + 1)){
+				assert(board[i] >= 0 && board[i] < 14);
+				RedCands.push_back(i);
+		}
+	}
+	for(int i = chessboard->BlackHead; i != -1; i = chessboard->Next[i]){
+		if (board[i] % 7 == 1 || // Cannon
+			(i == position - 4) || // neighbors
+			(i == position - 1) ||
+			(i == position + 4) ||
+			(i == position + 1)){
+				assert(board[i] >= 0 && board[i] < 14);
+				BlackCands.push_back(i);
+		}
+	}
+
+	static const double values[14] = {
+		1,180,  6, 18, 90,270,810,
+		1,180,  6, 18, 90,270,810
+	};
+	auto comp = [board] (int const& a, int const& b) -> bool
+    {
+       return values[board[a]] > values[board[b]]; // compare chess values
+    };
+	std::sort(RedCands.begin(), RedCands.end(), comp);
+	std::sort(BlackCands.begin(), BlackCands.end(), comp);
+	// sort descending, will be accessed from the back
+
+	double gain = 0.0;
+	// int piece = board[position]; // my piece
+	int opcolor = color^1;
+	std::vector<int> &mycand = color==RED ? RedCands : BlackCands;
+	std::vector<int> &opcand = color==RED ? BlackCands : RedCands;
+
+	int myturn = 0;
+	while(opcand.size()>0 && mycand.size()>0){
+		// Opponent
+		if (myturn==0){
+			int from = opcand.back();
+			if (Referee(board, from, position, opcolor)){
+				gain -= values[board[position]]; // capture piece
+				board[position] = board[from]; // place at position
+				board[from] = CHESS_EMPTY;
+				myturn = 1;
+			}
+			opcand.pop_back(); // remove from cands
+		}
+		else{
+			// my turn
+			int from = mycand.back();
+			if (Referee(board, from, position, color)){
+				gain += values[board[position]]; // capture piece
+				board[position] = board[from]; // place at position
+				board[from] = CHESS_EMPTY;
+				myturn = 0;
+			}
+			mycand.pop_back(); // remove from cands
+		}
+	}
+
+	// while(opcand.size()>0){
+	// 	gain -= values[piece]; // capture piece
+	// 	piece = opcand.back(); // place at location
+	// 	opcand.pop_back(); // remove from cands
+	// 	if(mycand.size()>0){
+	// 		gain += values[piece];
+	// 		piece = mycand.back();
+	// 		mycand.pop_back();
+	// 	}else break;
+	// }
+
+	return gain;
 }
 double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth, double alpha, double beta){
 	std::vector<MoveInfo> Moves;
@@ -862,8 +932,10 @@ double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, c
 	int move_count = Moves.size();
 	std::sort(Moves.begin(), Moves.end(), movecomp);
 
+	// src = move/100, dst = move%100
+	int see_pos = chessboard.History.empty() ? -1 : (chessboard.History.back() % 100); 
 	if(isTimeUp() || // time is up
-		remain_depth == 0 || // reach limit of depth
+		(remain_depth <= 0 && SEE(&chessboard, see_pos, color) <= 0) || // reach limit of depth and is quiescent (net gain < 0)
 		chessboard.Red_Chess_Num == 0 || // terminal node (no chess type)
 		chessboard.Black_Chess_Num == 0 || // terminal node (no chess type)
 		move_count == 0 // terminal node (no move type)
