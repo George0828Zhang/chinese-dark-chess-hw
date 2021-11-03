@@ -12,6 +12,8 @@
 #define DRAW 0.2
 #define LOSE 0.0
 #define BONUS 0.3
+// #define WIN 100000
+// #define BONUS 30000
 #define BONUS_MAX_PIECE 8
 
 #define OFFSET (WIN + BONUS)
@@ -698,7 +700,12 @@ double evalColor(const ChessBoard *chessboard, const std::vector<MoveInfo> &Move
 	double values[14] = {
 		1, 180, 6, 18, 90, 270, 810,
 		1, 180, 6, 18, 90, 270, 810};
-	double king_add_n_pawn[5] = {  270, 90, 18, 5, 0 }; // if eat a pawn, my king adds this much to its value
+	double king_add_n_pawn[] = {  362, 102, 22, 5, 0, 0 }; // if eat a pawn, my king adds this much to its value
+	// 5->4 : 0
+	// 4->3 : 5
+	// 3->2 : 17
+	// 2->1 : 80
+	// 1->0 : 260 
 	double mobilities[32] = {0};
 	for(auto& m: Moves){
 		mobilities[m.from_location_no]++;
@@ -718,17 +725,20 @@ double evalColor(const ChessBoard *chessboard, const std::vector<MoveInfo> &Move
 	for(int c = 0; c < 2; c++){
 		int op_king = (!c) * 7 + 6;
 		int my_pawn = c * 7 + 0;
-		values[op_king] = 810 * (5.0-(double)chessboard->AliveChess[my_pawn]);//(1 + (5.0-(double)chessboard->AliveChess[my_pawn])/10.0);
+		int n = chessboard->AliveChess[my_pawn];
+		values[op_king] += king_add_n_pawn[n];
 	}
 
-	double max_value = 1*5 + 180*2 + 6*2 + 18*2 + 90*2 + 270*2 + 810*5;
+	double max_value = 1*5 + 180*2 + 6*2 + 18*2 + 90*2 + 270*2 + 810*1 + king_add_n_pawn[0];
 	static const double w_mob = 4.0/(max_value+4.0);
+	// static const double w_mob = 0.5;
 
 
 	double value = 0;
 	int head = (color == RED) ? chessboard->RedHead : chessboard->BlackHead;
 	for (int i = head; i != -1; i = chessboard->Next[i])
 	{
+		// value += values[chessboard->Board[i]] + mobilities[i] * w_mob;
 		value += values[chessboard->Board[i]] * (1.0-w_mob) / max_value + mobilities[i] * w_mob / 64;//  min mat = 1 / 2348, max mob: 8 / 64 = 1/8
 	}
 	return value;
@@ -941,7 +951,7 @@ double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, c
 			// check 'current' chess board for repetition
 			int prev_mv_id = chessboard.Timestamp[Moves[i].num()];
 			int prev_new_mv_id = chessboard.Timestamp[new_move];
-			int repeats = chessboard.Footprint[Moves[i].num()];
+			// int repeats = chessboard.Footprint[Moves[i].num()];
 			if (color == this->Color &&
 				prev_mv_id != -1 &&
 				prev_new_mv_id != -1 &&
@@ -951,7 +961,7 @@ double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, c
 			{
 				// heavy penalty for repetition on my side
 				// t -= 0.5*pow(2.0, repeats-1); 
-				t -= WIN;
+				t = alpha; //WIN;
 			}
 			if (t > m){
 				m = t;
