@@ -690,50 +690,46 @@ double evalColor(const ChessBoard *chessboard, const std::vector<MoveInfo> &Move
 	static material values
 	cover and empty are both zero
 	max value = 1*5 + 180*2 + 6*2 + 18*2 + 90*2 + 270*2 + 810*1 = 1943
-	### modified: when pawn=1, max value would be=1943 - 4 + pro_p
+
 	max mobility = 12 + 12 + 14 + 14 = 52 (can right + can left + up + down, ignore cannon.)
-	if cannon: +(-3+7)*2 (cannon is best at middle border, near=3, target=7)
-		= 60
+	if cannon: +(-2+8)*2 (cannon is best at corner (?), =8)
+		= 64
 	*/
-	static const double pro_p[2] = {820, 20};
 	double values[14] = {
 		1, 180, 6, 18, 90, 270, 810,
 		1, 180, 6, 18, 90, 270, 810};
-	static const double weights[2] = {0.5, 0.5};
+	double king_add_n_pawn[5] = {  270, 90, 18, 5, 0 }; // if eat a pawn, my king adds this much to its value
 	double mobilities[32] = {0};
 	for(auto& m: Moves){
 		mobilities[m.from_location_no]++;
 	}
 
+	// for(int c = 0; c < 2; c++){
+	// 	int op_king = (!c) * 7 + 6;
+	// 	int my_pawn = c * 7 + 0;
+	// 	if (chessboard->AliveChess[op_king] > 0){
+	// 		if (chessboard->AliveChess[my_pawn] == 1)
+	// 			values[my_pawn] = 810;
+	// 		else if (chessboard->AliveChess[my_pawn] == 2)
+	// 			values[my_pawn] = 410;
+	// 	}
+	// }
+
 	for(int c = 0; c < 2; c++){
 		int op_king = (!c) * 7 + 6;
 		int my_pawn = c * 7 + 0;
-		if (chessboard->AliveChess[op_king] > 0){
-			if (chessboard->AliveChess[my_pawn] == 1)
-				values[my_pawn] = pro_p[0];
-			else if (chessboard->AliveChess[my_pawn] == 2)
-				values[my_pawn] = pro_p[1];
-		}
+		values[op_king] = 810 * (5.0-(double)chessboard->AliveChess[my_pawn]);//(1 + (5.0-(double)chessboard->AliveChess[my_pawn])/10.0);
 	}
 
-	// repeat decay
-	// int max_visit = chessboard->MaxFootprint;
-	// double penalize = max_visit > 1 ? pow(0.975, max_visit - 1) : 1;
+	double max_value = 1*5 + 180*2 + 6*2 + 18*2 + 90*2 + 270*2 + 810*5;
+	static const double w_mob = 4.0/(max_value+4.0);
 
-	// double material = 0, mobi = 0;
-	// int head = (color==RED) ? chessboard->RedHead : chessboard->BlackHead;
-	// for (int i = head; i != -1; i = chessboard->Next[i])
-	// {
-	// 	material += values[chessboard->Board[i]] / maxval[0];
-	// 	mobi += mobilities[i] / maxval[1];
-	// }
-	// double value = material * weights[0] + mobi * weights[1];
+
 	double value = 0;
 	int head = (color == RED) ? chessboard->RedHead : chessboard->BlackHead;
 	for (int i = head; i != -1; i = chessboard->Next[i])
 	{
-		// value += mat * weights[0] + (mob / 7 * mat) * weights[1];
-		value += values[chessboard->Board[i]] * weights[0] / (1943 - 4 + pro_p[0]) + mobilities[i] * weights[1] / 60;
+		value += values[chessboard->Board[i]] * (1.0-w_mob) / max_value + mobilities[i] * w_mob / 64;//  min mat = 1 / 2348, max mob: 8 / 64 = 1/8
 	}
 	return value;
 }
@@ -852,7 +848,7 @@ double MyAI::SEE(const ChessBoard *chessboard, const int position, const int col
 			(i == position - 1) ||
 			(i == position + 4) ||
 			(i == position + 1)){
-				assert(board[i] >= 0 && board[i] < 14);
+				// assert(board[i] >= 0 && board[i] < 14);
 				RedCands.push_back(i);
 		}
 	}
@@ -862,7 +858,7 @@ double MyAI::SEE(const ChessBoard *chessboard, const int position, const int col
 			(i == position - 1) ||
 			(i == position + 4) ||
 			(i == position + 1)){
-				assert(board[i] >= 0 && board[i] < 14);
+				// assert(board[i] >= 0 && board[i] < 14);
 				BlackCands.push_back(i);
 		}
 	}
@@ -911,17 +907,6 @@ double MyAI::SEE(const ChessBoard *chessboard, const int position, const int col
 		}
 	}
 
-	// while(opcand.size()>0){
-	// 	gain -= values[piece]; // capture piece
-	// 	piece = opcand.back(); // place at location
-	// 	opcand.pop_back(); // remove from cands
-	// 	if(mycand.size()>0){
-	// 		gain += values[piece];
-	// 		piece = mycand.back();
-	// 		mycand.pop_back();
-	// 	}else break;
-	// }
-
 	return gain;
 }
 double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth, double alpha, double beta){
@@ -961,9 +946,12 @@ double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, c
 				prev_mv_id != -1 &&
 				prev_new_mv_id != -1 &&
 				prev_new_mv_id - prev_mv_id == 1 &&
-				chessboard.History.size() - prev_mv_id <= 10) // repetition in 10 steps
+				chessboard.History.size() - prev_mv_id <= 10 &&
+				isDraw(&new_chessboard)) // repetition in 10 steps
 			{
-				t -= 0.5*pow(2.0, repeats-1); // heavy penalty for repetition on my side
+				// heavy penalty for repetition on my side
+				// t -= 0.5*pow(2.0, repeats-1); 
+				t -= WIN;
 			}
 			if (t > m){
 				m = t;
