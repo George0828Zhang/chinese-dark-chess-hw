@@ -700,7 +700,7 @@ double evalColor(const ChessBoard *chessboard, const std::vector<MoveInfo> &Move
 	double values[14] = {
 		1, 180, 6, 18, 90, 270, 810,
 		1, 180, 6, 18, 90, 270, 810};
-	double king_add_n_pawn[] = {  362, 102, 22, 5, 0, 0 }; // if eat a pawn, my king adds this much to its value
+	double king_add_n_pawn[] = {  381, 111, 22, 5, 0, 0 }; // if eat a pawn, my king adds this much to its value
 	// 5->4 : 0
 	// 4->3 : 5
 	// 3->2 : 17
@@ -730,7 +730,7 @@ double evalColor(const ChessBoard *chessboard, const std::vector<MoveInfo> &Move
 	}
 
 	double max_value = 1*5 + 180*2 + 6*2 + 18*2 + 90*2 + 270*2 + 810*1 + king_add_n_pawn[0];
-	static const double w_mob = 4.0/(max_value+4.0);
+	static const double w_mob = 0.5; //4.0/(max_value+4.0);
 	// static const double w_mob = 0.5;
 
 
