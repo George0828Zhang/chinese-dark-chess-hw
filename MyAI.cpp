@@ -1,5 +1,10 @@
 #include "float.h"
-#include "time.h"
+
+#ifdef WINDOWS
+#include <time.h>
+#else
+#include <sys/time.h>
+#endif
 #include "MyAI.h"
 #include <algorithm>
 #include <vector>
@@ -237,8 +242,8 @@ void MyAI::initBoardState()
 	// main_chessboard.black_chess_loc = std::vector<int>();
 	main_chessboard.RedHead = -1;
 	main_chessboard.BlackHead = -1;
-	memset(main_chessboard.Footprint, 0, sizeof(int) * FOOTPRINTSZ);
-	memset(main_chessboard.Timestamp, -1, sizeof(int) * FOOTPRINTSZ);
+	// memset(main_chessboard.Footprint, 0, sizeof(int) * FOOTPRINTSZ);
+	// memset(main_chessboard.Timestamp, -1, sizeof(int) * FOOTPRINTSZ);
 
 	//convert to my format
 	int Index = 0;
@@ -262,10 +267,14 @@ void MyAI::generateMove(char move[6])
 	int EndPoint = 0;
 
 	double t = -DBL_MAX;
+#ifdef WINDOWS
 	begin = clock();
+#else
+	gettimeofday(&begin, 0);
+#endif
 
 	// iterative-deeping, start from 3, time limit = <TIME_LIMIT> sec
-	for(int depth = 3; (double)(clock() - begin) / CLOCKS_PER_SEC < TIME_LIMIT; depth+=2){
+	for(int depth = 3; !isTimeUp(); depth+=2){
 		this->node = 0;
 		int best_move_tmp; double t_tmp;
 
@@ -390,8 +399,8 @@ void MyAI::MakeMove(ChessBoard* chessboard, const int move, const int chess){
 	}
 	chessboard->History.push_back(move);
 	// chessboard->RepeatAt.push_back(chessboard->Footprint[move]);
-	chessboard->Timestamp[move] = chessboard->History.size() - 1;
-	chessboard->Footprint[move]++;
+	// chessboard->Timestamp[move] = chessboard->History.size() - 1;
+	// chessboard->Footprint[move]++;
 }
 
 void MyAI::MakeMove(ChessBoard* chessboard, const char move[6])
@@ -684,6 +693,23 @@ void debug_Chessboard(const ChessBoard *chessboard, const int color)
 	strcat(Mes, "\n\n");
 	fprintf(stderr, "%s", Mes);
 }
+bool cantWin(const ChessBoard *chessboard, const int color){
+	if(chessboard->AliveChess[color * 7 + 1]>0) return false; // i have cannon might win
+	int op_color = color^1;
+	int op_max = -1;
+	for (int i = 0; i < 7; i++)
+	{
+		if(chessboard->AliveChess[op_color * 7 + i]>0)	
+			op_max = i;
+	}
+	if (op_max==6) // king
+		return chessboard->AliveChess[color * 7 + 0] < 1; // cant win if no pawn to eat king
+	for(int i = op_max; i < 7; i++){
+		if(chessboard->AliveChess[color * 7 + i]>0)	
+			return false; // i have higher chess might win
+	}
+	return true;
+}
 
 double evalColor(const ChessBoard *chessboard, const std::vector<MoveInfo> &Moves, const int color)
 {
@@ -730,18 +756,18 @@ double evalColor(const ChessBoard *chessboard, const std::vector<MoveInfo> &Move
 	}
 
 	double max_value = 1*5 + 180*2 + 6*2 + 18*2 + 90*2 + 270*2 + 810*1 + king_add_n_pawn[0];
-	static const double w_mob = 0.5; //4.0/(max_value+4.0);
-	// static const double w_mob = 0.5;
+	// static const double w_mob = 0.5; //4.0/(max_value+4.0);
+	static const double w_mob = 0.34;
 
 
 	double value = 0;
 	int head = (color == RED) ? chessboard->RedHead : chessboard->BlackHead;
 	for (int i = head; i != -1; i = chessboard->Next[i])
 	{
-		// value += values[chessboard->Board[i]] + mobilities[i] * w_mob;
-		value += values[chessboard->Board[i]] * (1.0-w_mob) / max_value + mobilities[i] * w_mob / 64;//  min mat = 1 / 2348, max mob: 8 / 64 = 1/8
+		value += values[chessboard->Board[i]] + mobilities[i] * w_mob;// max delta mobi = 4 - 1 = 3
+		// value += values[chessboard->Board[i]] * (1.0-w_mob) / max_value + mobilities[i] * w_mob / 64;
 	}
-	return value;
+	return value / (max_value + 64*w_mob);
 }
 
 // always use my point of view, so use this->Color
@@ -763,6 +789,8 @@ double MyAI::Evaluate(const ChessBoard* chessboard,
 		finish = true;
 	}else if(isDraw(chessboard)){ // Draw
 		// score = DRAW - DRAW;
+		if (!cantWin(chessboard, color))
+			score -= WIN; // if win is possible, dont draw
 		finish = true;
 	}else{ // no conclusion
 		// static material values
@@ -832,22 +860,24 @@ static inline bool movecomp(const MoveInfo &a, const MoveInfo &b){
 	1. CHESS_EMPTY => -2 mod 7 is still -2
 	2. 'to' bigger the better, more important
 	3. 'from' smaller the better, less important
-	BUG: when eat=none, this will promote moving smaller chess, which is undesired.
+	When both no eat, random permute
 	*/
 	int a_from = a.from_chess_no % 7;
 	int b_from = b.from_chess_no % 7;
 	int a_to = a.to_chess_no % 7;
 	int b_to = b.to_chess_no % 7;
 	int noise = rand() % 2;
-	int a_mask = sgn(a.to_chess_no); // && a.to_chess_no != CHESS_COVER;
-	int b_mask = sgn(b.to_chess_no); // && a.to_chess_no != CHESS_COVER;
+	int a_mask = a.to_chess_no >= 0;
+	int b_mask = b.to_chess_no >= 0;
 	return (a_to * 10 + (6 - a_from) * a_mask) * 2 > (b_to * 10 + (6 - b_from) * b_mask) * 2 + noise;
 	// return ((a.to_chess_no % 7) * 10 + 6 - (a.from_chess_no % 7)) * 2 > ((b.to_chess_no % 7) * 10 + 6 - (b.from_chess_no % 7)) * 2 + noise;
 }
 double MyAI::SEE(const ChessBoard *chessboard, const int position, const int color){
 	if(!(position >= 0 && position < 32) ||
-	chessboard->Board[position] < 0 ||
-	(chessboard->Board[position] / 7) != color) return 0;
+	((chessboard->Board[position] / 7) == color)) // last move is flip
+		return 0;
+	
+	// assert(chessboard->Board[position] >= 0);
 
 	std::vector<int> RedCands, BlackCands;
 	int board[32];
@@ -881,9 +911,18 @@ double MyAI::SEE(const ChessBoard *chessboard, const int position, const int col
     {
        return values[board[a]] > values[board[b]]; // compare chess values
     };
-	std::sort(RedCands.begin(), RedCands.end(), comp);
-	std::sort(BlackCands.begin(), BlackCands.end(), comp);
+	if (RedCands.size() > 0)
+		std::sort(RedCands.begin(), RedCands.end(), comp);
+	if (BlackCands.size() > 0)
+		std::sort(BlackCands.begin(), BlackCands.end(), comp);
 	// sort descending, will be accessed from the back
+
+	// for(int i = 1; i < RedCands.size(); i++){
+	// 	assert(values[board[RedCands[i]]] <= values[board[RedCands[i]]]);
+	// }
+	// for(int i = 1; i < BlackCands.size(); i++){
+	// 	assert(values[board[BlackCands[i]]] <= values[board[BlackCands[i]]]);
+	// }
 
 	double gain = 0.0;
 	// int piece = board[position]; // my piece
@@ -891,7 +930,7 @@ double MyAI::SEE(const ChessBoard *chessboard, const int position, const int col
 	std::vector<int> &mycand = color==RED ? RedCands : BlackCands;
 	std::vector<int> &opcand = color==RED ? BlackCands : RedCands;
 
-	int myturn = 0;
+	int myturn = 1;
 	while(opcand.size()>0 && mycand.size()>0){
 		// Opponent
 		if (myturn==0){
@@ -943,20 +982,22 @@ double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, c
 		int new_move;
 		// search deeper
 		for(int i = 0; i < move_count; i++){ // move
+			if (isTimeUp()) break;
 			ChessBoard new_chessboard = chessboard;
 			
 			MakeMove(&new_chessboard, Moves[i].num(), 0); // 0: dummy
 			double t = -Nega_max(new_chessboard, &new_move, color^1, depth+1, remain_depth-1, -beta, -m); // nega max: flip sign of alpha and beta
 
 			// check 'current' chess board for repetition
-			int prev_mv_id = chessboard.Timestamp[Moves[i].num()];
-			int prev_new_mv_id = chessboard.Timestamp[new_move];
+			// int prev_mv_id = chessboard.Timestamp[Moves[i].num()];
+			// int prev_new_mv_id = chessboard.Timestamp[new_move];
 			// int repeats = chessboard.Footprint[Moves[i].num()];
 			if (color == this->Color &&
-				prev_mv_id != -1 &&
-				prev_new_mv_id != -1 &&
-				prev_new_mv_id - prev_mv_id == 1 &&
-				chessboard.History.size() - prev_mv_id <= 10 &&
+				// prev_mv_id != -1 &&
+				// prev_new_mv_id != -1 &&
+				// prev_new_mv_id - prev_mv_id == 1 &&
+				// chessboard.History.size() - prev_mv_id <= 10 &&
+				!cantWin(&new_chessboard, color) && // if win is possible, dont draw
 				isDraw(&new_chessboard)) // repetition in 10 steps
 			{
 				// heavy penalty for repetition on my side
@@ -1014,9 +1055,24 @@ bool MyAI::isDraw(const ChessBoard* chessboard){
 }
 
 bool MyAI::isTimeUp(){
-	this->timeIsUp = ((double)(clock() - begin) / CLOCKS_PER_SEC >= TIME_LIMIT);
+	double elapsed; // ms
+	
+	// design for different os
+#ifdef WINDOWS
+	clock_t end = clock();
+	elapsed = (end - begin);
+#else
+	struct timeval end;
+	gettimeofday(&end, 0);
+	long seconds = end.tv_sec - begin.tv_sec;
+	long microseconds = end.tv_usec - begin.tv_usec;
+	elapsed = (seconds*1000 + microseconds*1e-3);
+#endif
+
+	this->timeIsUp = (elapsed >= TIME_LIMIT*1000);
 	return this->timeIsUp;
 }
+
 
 //Display chess board
 void MyAI::Pirnf_Chessboard()

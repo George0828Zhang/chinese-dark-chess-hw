@@ -29,8 +29,8 @@ public:
 	int NoEatFlip;
 	std::vector<int> History;
 	// std::vector<int> RepeatAt;
-	int Footprint[FOOTPRINTSZ];
-	int Timestamp[FOOTPRINTSZ];
+	// int Footprint[FOOTPRINTSZ];
+	// int Timestamp[FOOTPRINTSZ];
 };
 
 class MoveInfo{
@@ -44,9 +44,9 @@ public:
 	inline int num();
 };
 
-template <typename T> int sgn(T val) {
-    return (T(0) < val) - (val < T(0));
-}
+// template <typename T> int sgn(T val) {
+//     return (T(0) < val) - (val < T(0));
+// }
 
 class MyAI  
 {
@@ -98,8 +98,13 @@ private:
 	int Color;
 	int Red_Time, Black_Time;
 	ChessBoard main_chessboard;
-	clock_t begin;
 	bool timeIsUp;
+
+#ifdef WINDOWS
+	clock_t begin;
+#else
+	struct timeval begin;
+#endif
 	
 	// statistics
 	int node;
