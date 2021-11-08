@@ -26,6 +26,8 @@
 #define NOEATFLIP_LIMIT 60
 #define POSITION_REPETITION_LIMIT 3
 
+int rand_seed;
+
 MoveInfo::MoveInfo(){}
 MoveInfo::MoveInfo(const int *board, int from, int to)
 {
@@ -38,6 +40,7 @@ inline int MoveInfo::num()
 {
 	return from_location_no * 100 + to_location_no;
 }
+inline bool cantWinCheck(const ChessBoard *chessboard, const int color);
 
 MyAI::MyAI(void){}
 
@@ -244,6 +247,8 @@ void MyAI::initBoardState()
 	main_chessboard.BlackHead = -1;
 	// memset(main_chessboard.Footprint, 0, sizeof(int) * FOOTPRINTSZ);
 	// memset(main_chessboard.Timestamp, -1, sizeof(int) * FOOTPRINTSZ);
+	main_chessboard.cantWin[0] = false;
+	main_chessboard.cantWin[1] = false;
 
 	//convert to my format
 	int Index = 0;
@@ -401,6 +406,9 @@ void MyAI::MakeMove(ChessBoard* chessboard, const int move, const int chess){
 	// chessboard->RepeatAt.push_back(chessboard->Footprint[move]);
 	// chessboard->Timestamp[move] = chessboard->History.size() - 1;
 	// chessboard->Footprint[move]++;
+	for (int c = 0; c < 2; c++){
+		chessboard->cantWin[c] = cantWinCheck(chessboard, c);
+	}
 }
 
 void MyAI::MakeMove(ChessBoard* chessboard, const char move[6])
@@ -693,22 +701,32 @@ void debug_Chessboard(const ChessBoard *chessboard, const int color)
 	strcat(Mes, "\n\n");
 	fprintf(stderr, "%s", Mes);
 }
-bool cantWin(const ChessBoard *chessboard, const int color){
-	if(chessboard->AliveChess[color * 7 + 1]>0) return false; // i have cannon might win
+inline bool cantWinCheck(const ChessBoard *chessboard, const int color){
+	if (chessboard->cantWin[color])
+		return true; // cant once, cant forever
+	if (chessboard->AliveChess[color * 7 + 1] > 0)
+		return false; // i have cannon might win
 	int op_color = color^1;
-	int op_max = -1;
-	for (int i = 0; i < 7; i++)
+	if ((op_color == RED && chessboard->Red_Chess_Num == 0) &&
+		(op_color == BLACK && chessboard->Black_Chess_Num == 0))
+		return false; // opponent loses i win
+	int offset = color * 7;
+	int myCumsumAlive[7], cumsum = 0;
+	for (int i = 6; i >= 0; i--)
 	{
-		if(chessboard->AliveChess[op_color * 7 + i]>0)	
-			op_max = i;
+		cumsum += chessboard->AliveChess[offset + i];
+		myCumsumAlive[i] = cumsum;
 	}
-	if (op_max==6) // king
-		return chessboard->AliveChess[color * 7 + 0] < 1; // cant win if no pawn to eat king
-	for(int i = op_max; i < 7; i++){
-		if(chessboard->AliveChess[color * 7 + i]>0)	
-			return false; // i have higher chess might win
+	myCumsumAlive[0] -= chessboard->AliveChess[offset + 6];
+	myCumsumAlive[6] += chessboard->AliveChess[offset + 0];
+
+	offset = op_color * 7;
+	for(int i = 0; i < 7; i++){
+		if (chessboard->AliveChess[offset + i] > 0 && myCumsumAlive[i] < 1){
+			return true;
+		}
 	}
-	return true;
+	return false;
 }
 
 double evalColor(const ChessBoard *chessboard, const std::vector<MoveInfo> &Moves, const int color)
@@ -789,7 +807,7 @@ double MyAI::Evaluate(const ChessBoard* chessboard,
 		finish = true;
 	}else if(isDraw(chessboard)){ // Draw
 		// score = DRAW - DRAW;
-		if (!cantWin(chessboard, color))
+		if (!cantWinCheck(chessboard, color))
 			score -= WIN; // if win is possible, dont draw
 		finish = true;
 	}else{ // no conclusion
@@ -861,16 +879,28 @@ static inline bool movecomp(const MoveInfo &a, const MoveInfo &b){
 	2. 'to' bigger the better, more important
 	3. 'from' smaller the better, less important
 	When both no eat, random permute
+	BUG when flip?
 	*/
 	int a_from = a.from_chess_no % 7;
 	int b_from = b.from_chess_no % 7;
 	int a_to = a.to_chess_no % 7;
 	int b_to = b.to_chess_no % 7;
-	int noise = rand() % 2;
 	int a_mask = a.to_chess_no >= 0;
 	int b_mask = b.to_chess_no >= 0;
-	return (a_to * 10 + (6 - a_from) * a_mask) * 2 > (b_to * 10 + (6 - b_from) * b_mask) * 2 + noise;
-	// return ((a.to_chess_no % 7) * 10 + 6 - (a.from_chess_no % 7)) * 2 > ((b.to_chess_no % 7) * 10 + 6 - (b.from_chess_no % 7)) * 2 + noise;
+	int noise = ((rand_seed*(1+abs(a_from * a_to + b_from * b_to))) % 100) > 49;
+	return (a_to * 10 + (6 - a_from) * a_mask) * 2 + noise > (b_to * 10 + (6 - b_from) * b_mask) * 2;
+}
+static inline void insertion_sort_shuffle(std::vector<MoveInfo>& Moves){
+	/* small array: insertion sort is ok
+	*/
+	rand_seed = rand();
+	for(unsigned int i = 0; i < Moves.size(); i++){
+		for (unsigned int j = i; j > 0; j--){
+			if (movecomp(Moves[j], Moves[j - 1])){
+				std::swap(Moves[j], Moves[j - 1]);
+			} else break;
+		}
+	}
 }
 double MyAI::SEE(const ChessBoard *chessboard, const int position, const int color){
 	if(!(position >= 0 && position < 32) ||
@@ -960,11 +990,10 @@ double MyAI::SEE(const ChessBoard *chessboard, const int position, const int col
 }
 double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth, double alpha, double beta){
 	std::vector<MoveInfo> Moves;
-
 	// move
 	Expand(&chessboard, color, Moves);
 	int move_count = Moves.size();
-	std::sort(Moves.begin(), Moves.end(), movecomp);
+	insertion_sort_shuffle(Moves);
 
 	// src = move/100, dst = move%100
 	int see_pos = chessboard.History.empty() ? -1 : (chessboard.History.back() % 100); 
@@ -984,9 +1013,9 @@ double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, c
 		for(int i = 0; i < move_count; i++){ // move
 			if (isTimeUp()) break;
 			ChessBoard new_chessboard = chessboard;
-			
+
 			MakeMove(&new_chessboard, Moves[i].num(), 0); // 0: dummy
-			double t = -Nega_max(new_chessboard, &new_move, color^1, depth+1, remain_depth-1, -beta, -m); // nega max: flip sign of alpha and beta
+			double t = -Nega_max(new_chessboard, &new_move, color ^ 1, depth + 1, remain_depth - 1, -beta, -m); // nega max: flip sign of alpha and beta
 
 			// check 'current' chess board for repetition
 			// int prev_mv_id = chessboard.Timestamp[Moves[i].num()];
@@ -997,12 +1026,12 @@ double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, c
 				// prev_new_mv_id != -1 &&
 				// prev_new_mv_id - prev_mv_id == 1 &&
 				// chessboard.History.size() - prev_mv_id <= 10 &&
-				!cantWin(&new_chessboard, color) && // if win is possible, dont draw
+				!cantWinCheck(&new_chessboard, color) && // if win is possible, dont draw
 				isDraw(&new_chessboard)) // repetition in 10 steps
 			{
 				// heavy penalty for repetition on my side
 				// t -= 0.5*pow(2.0, repeats-1); 
-				t = alpha; //WIN;
+				t -= WIN;
 			}
 			if (t > m){
 				m = t;

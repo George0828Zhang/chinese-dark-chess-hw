@@ -28,6 +28,7 @@ public:
 	int Red_Chess_Num, Black_Chess_Num;
 	int NoEatFlip;
 	std::vector<int> History;
+	bool cantWin[2];
 	// std::vector<int> RepeatAt;
 	// int Footprint[FOOTPRINTSZ];
 	// int Timestamp[FOOTPRINTSZ];
