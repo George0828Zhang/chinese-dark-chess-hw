@@ -775,7 +775,7 @@ double evalColor(const ChessBoard *chessboard, const std::vector<MoveInfo> &Move
 
 	double max_value = 1*5 + 180*2 + 6*2 + 18*2 + 90*2 + 270*2 + 810*1 + king_add_n_pawn[0];
 	// static const double w_mob = 0.5; //4.0/(max_value+4.0);
-	static const double w_mob = 0.34;
+	static const double w_mob = 0.2;
 
 
 	double value = 0;
@@ -807,9 +807,7 @@ double MyAI::Evaluate(const ChessBoard* chessboard,
 		finish = true;
 	}else if(isDraw(chessboard)){ // Draw
 		// score = DRAW - DRAW;
-		if (!cantWinCheck(chessboard, color))
-			score -= WIN; // if win is possible, dont draw
-		finish = true;
+		finish = false;
 	}else{ // no conclusion
 		// static material values
 		// cover and empty are both zero
