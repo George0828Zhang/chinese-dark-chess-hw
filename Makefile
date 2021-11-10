@@ -3,6 +3,7 @@ G_PLUS_PLUS := g++ -std=c++11 -static -O3 -Wall -g
 
 # object file folder
 OBJ_FOLDER := bin
+SRC_FOLDER := src
 
 # check OS
 ifeq ($(OS), Windows_NT)
@@ -17,12 +18,12 @@ endif
 
 # specify files
 MAIN := main
-MAIN_FILE := $(MAIN).cpp
+MAIN_FILE := $(SRC_FOLDER)/$(MAIN).cpp
 MAIN_OBJ := $(OBJ_FOLDER)/$(MAIN).o
 
 AI := MyAI
-AI_FILE := $(AI).cpp
-AI_HEADER := $(AI).h
+AI_FILE := $(SRC_FOLDER)/$(AI).cpp
+AI_HEADER := $(SRC_FOLDER)/$(AI).h
 AI_OBJ := $(OBJ_FOLDER)/$(AI).o
 
 # command
