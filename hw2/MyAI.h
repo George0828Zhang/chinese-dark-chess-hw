@@ -8,6 +8,8 @@
 #include <time.h>
 #include <stdint.h>
 #include "pcg_basic.h"
+#include <vector>
+#include <random>
 
 #define RED 0
 #define BLACK 1
@@ -15,15 +17,36 @@
 #define CHESS_EMPTY -2
 #define COMMAND_NUM 18
 
-struct ChessBoard{
+class ChessBoard{
+public:
 	int Board[32];
+	int Prev[32];
+	int Next[32];
+	int RedHead, BlackHead;
 	int CoverChess[14];
+	int AliveChess[14];
 	int Red_Chess_Num, Black_Chess_Num;
 	int NoEatFlip;
-	int History[4096];
-	int HistoryCount;
+	std::vector<int> History;
 };
 
+class MoveInfo{
+public:
+	int from_chess_no;
+	int to_chess_no;
+	int from_location_no;
+	int to_location_no;
+	MoveInfo(){};
+	MoveInfo(const int *board, int from, int to){
+		from_location_no = from;
+		to_location_no = to;
+		from_chess_no = board[from];
+		to_chess_no = board[to];
+	};
+	int num(){
+		return from_location_no * 100 + to_location_no;
+	};
+};
 class MyAI  
 {
 	const char* commands_name[COMMAND_NUM] = {
@@ -88,23 +111,28 @@ private:
 	int ConvertChessNo(int input);
 	bool isTimeUp();
 	uint32_t randIndex(uint32_t max);
+	template<class T>
+	T randItem(const std::vector<T>& container){
+		uint32_t i = randIndex(container.size());
+		return container[i];
+	};
 
 	// Board
 	void initBoardState();
 	void generateMove(char move[6]);
 	void MakeMove(ChessBoard* chessboard, const int move, const int chess);
 	void MakeMove(ChessBoard* chessboard, const char move[6]);
-	bool Referee(const int* board, const int Startoint, const int EndPoint, const int color);
-	int Expand(const int* board, const int color, int *Result);
-	double Evaluate(const ChessBoard* chessboard, const int legal_move_count, const int color);
+	bool Referee(const int *board, const int Startoint, const int EndPoint, const int color);
+	void Expand(const ChessBoard *chessboard, const int color, std::vector<MoveInfo> &Result);
+	double Evaluate(const ChessBoard *chessboard, const std::vector<MoveInfo> &Moves, const int color);
 	double Simulate(ChessBoard chessboard);
 	bool isDraw(const ChessBoard* chessboard);
-	bool isFinish(const ChessBoard* chessboard, int move_count);
+	bool isFinish(const ChessBoard *chessboard, int move_count, const int color);
+	double SEE(const ChessBoard *chessboard, const int position, const int color);
 
 	// Display
 	void Pirnf_Chess(int chess_no,char *Result);
 	void Pirnf_Chessboard();
-	
 };
 
 #endif
