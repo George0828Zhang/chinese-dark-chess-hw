@@ -268,7 +268,6 @@ void MyAI::generateMove(char move[6])
 	}
 
 	// MCS_pure
-	double c_ucb = 1.18;
 	int total_simulate_count = 0;
 	int best_child_id = 0;
 	while(!isTimeUp()){
@@ -317,7 +316,7 @@ void MyAI::generateMove(char move[6])
 	this->Pirnf_Chessboard();
 }
 
-void removeFromBoard(ChessBoard* chessboard, int at){
+void removeFromBoard(ChessBoard* chessboard, const int at){
 	int left = chessboard->Prev[at];
 	int right = chessboard->Next[at];
 	if (left != -1)
@@ -332,30 +331,60 @@ void removeFromBoard(ChessBoard* chessboard, int at){
 		chessboard->BlackHead = right;
 }
 
-void insertInBoard(ChessBoard* chessboard, int at){
+void insertInBoard(ChessBoard* chessboard, const int at){
+	/*
+	> 8 : --> use incremental
+	<= 8: --> use list
+	 */
+	const int threshold = 8;
 	int color = chessboard->Board[at] / 7;
+	int num_chess;
+	int old_head;
+	int cur_head;
 	if (color == RED){
+		old_head = chessboard->RedHead;
 		if (chessboard->RedHead == -1 || chessboard->RedHead > at)
 			chessboard->RedHead = at;
+		cur_head = chessboard->RedHead;
+		num_chess = chessboard->Red_Chess_Num;
 	}
 	else{
+		old_head = chessboard->BlackHead;
 		if (chessboard->BlackHead == -1 || chessboard->BlackHead > at)
 			chessboard->BlackHead = at;
+		cur_head = chessboard->BlackHead;
+		num_chess = chessboard->Black_Chess_Num;
+	}
+	int left = -1, right = -1;
+	assert(old_head != at);
+	if (cur_head != old_head){
+		right = old_head;
+	}
+	else if (num_chess > threshold){
+		for(int i = at-1; i >= 0; i--){
+			if (chessboard->Board[i] >= 0 && chessboard->Board[i] / 7 == color){
+				left = i;
+				right = chessboard->Next[i];
+				break;
+			}
+		}
+		// definitely have left
+		assert(left != -1);
+	}
+	else{
+		// definitely have cur_head
+		for (int i = cur_head; i != -1; i = chessboard->Next[i]){
+			if (i < at &&
+				(chessboard->Next[i] == -1 || chessboard->Next[i] > at))
+			{
+				left = i;
+				right = chessboard->Next[i];
+				break;
+			}
+		}
+		assert(left != -1);
 	}
 
-	int left = -1, right = -1;
-	for(int i = at+1; i < 32; i++){
-		if (chessboard->Board[i] >= 0 && chessboard->Board[i] / 7 == color){
-			right = i;
-			break;
-		}
-	}
-	for(int i = at-1; i >= 0; i--){
-		if (chessboard->Board[i] >= 0 && chessboard->Board[i] / 7 == color){
-			left = i;
-			break;
-		}
-	}
 	chessboard->Prev[at] = left;
 	chessboard->Next[at] = right;
 	if (left != -1){
@@ -363,6 +392,35 @@ void insertInBoard(ChessBoard* chessboard, int at){
 	}
 	if (right != -1){
 		chessboard->Prev[right] = at;
+	}
+}
+
+void moveInBoard(ChessBoard *chessboard, const int src, const int dst){
+	/* Optimizes:
+	removeFromBoard(chessboard, src);
+	insertInBoard(chessboard, dst);
+	*/
+	int left = chessboard->Prev[src];
+	int right = chessboard->Next[src];
+	if (left < dst &&
+		(right == -1 || right > dst))
+	{
+		if (left != -1)
+			chessboard->Next[left] = dst;
+		if (right != -1)
+			chessboard->Prev[right] = dst;
+		chessboard->Prev[dst] = left;
+		chessboard->Next[dst] = right;
+		chessboard->Prev[src] = -1;
+		chessboard->Next[src] = -1;
+		if (chessboard->RedHead == src)
+			chessboard->RedHead = dst;
+		if (chessboard->BlackHead == src)
+			chessboard->BlackHead = dst;
+	}
+	else{
+		removeFromBoard(chessboard, src);
+		insertInBoard(chessboard, dst);
 	}
 }
 
@@ -388,9 +446,10 @@ void MyAI::MakeMove(ChessBoard* chessboard, const int move, const int chess){
 		}
 		chessboard->Board[dst] = chessboard->Board[src];
 		chessboard->Board[src] = CHESS_EMPTY;
-		removeFromBoard(chessboard, src);
-		insertInBoard(chessboard, dst);
+		// removeFromBoard(chessboard, src);
+		// insertInBoard(chessboard, dst);
 		// TODO: combine remove and insert
+		moveInBoard(chessboard, src, dst);
 	}
 	chessboard->History.push_back(move);
 }
@@ -415,9 +474,11 @@ void MyAI::Expand(const ChessBoard *chessboard, const int color, std::vector<Mov
 {
 	assert(Result.empty());
 	int i = (color == RED) ? chessboard->RedHead : chessboard->BlackHead;
+	int n_chess = (color == RED) ? chessboard->Red_Chess_Num : chessboard->Black_Chess_Num;
 	const int *board = chessboard->Board;
 
 	for (; i != -1; i = chessboard->Next[i]){
+		n_chess--;
 		// Cannon
 		if(board[i] % 7 == 1)
 		{
@@ -452,6 +513,7 @@ void MyAI::Expand(const ChessBoard *chessboard, const int color, std::vector<Mov
 			}
 		}
 	}
+	assert(n_chess == 0);
 }
 
 
@@ -630,7 +692,13 @@ double evalColor(const ChessBoard *chessboard, const std::vector<MoveInfo> &Move
 	{
 		value += values[chessboard->Board[i]] + mobilities[i] * w_mob;
 	}
-	// TODO: Add covered chess
+	// covered
+	for(int i = 0; i < 7; i++){
+		int p = color * 7 + i;
+		if(chessboard->CoverChess[p] > 0){
+			value += chessboard->CoverChess[p] * values[p];
+		}
+	}
 	return value / (max_value + 64*w_mob);
 }
 
@@ -641,7 +709,7 @@ double MyAI::Evaluate(const ChessBoard *chessboard,
 	// score = My Score - Opponent's Score
 	// offset = <WIN + BONUS> to let score always not less than zero
 
-	double score = WIN + BONUS;
+	double score = 0;
 	bool finish;
 	int legal_move_count = Moves.size();
 
