@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include "pcg_basic.h"
 #include <vector>
+#include <deque>
 #include <random>
 
 #define RED 0
@@ -112,7 +113,7 @@ private:
 	bool isTimeUp();
 	uint32_t randIndex(uint32_t max);
 	template<class T>
-	T randItem(const std::vector<T>& container){
+	T randItem(const std::deque<T>& container){
 		uint32_t i = randIndex(container.size());
 		return container[i];
 	};
@@ -123,11 +124,11 @@ private:
 	void MakeMove(ChessBoard* chessboard, const int move, const int chess);
 	void MakeMove(ChessBoard* chessboard, const char move[6]);
 	bool Referee(const int *board, const int Startoint, const int EndPoint, const int color);
-	void Expand(const ChessBoard *chessboard, const int color, std::vector<MoveInfo> &Result);
-	double Evaluate(const ChessBoard *chessboard, const std::vector<MoveInfo> &Moves, const int color);
+	void Expand(const ChessBoard *chessboard, const int color, std::deque<MoveInfo> &Result, int* num_eats);
+	double Evaluate(const ChessBoard *chessboard, const std::deque<MoveInfo> &Moves, const int color);
 	double Simulate(ChessBoard chessboard);
 	bool isDraw(const ChessBoard* chessboard);
-	bool isFinish(const ChessBoard *chessboard, int move_count, const int color);
+	bool isFinish(const ChessBoard *chessboard, const std::deque<MoveInfo> &Moves, const int eatNum, const int color);
 	double SEE(const ChessBoard *chessboard, const int position, const int color);
 
 	// Display
