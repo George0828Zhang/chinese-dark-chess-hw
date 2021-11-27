@@ -251,6 +251,12 @@ void MyAI::initBoardState()
 	Pirnf_Chessboard();
 }
 
+
+void MyAI::fastForward(ChessBoard* chessboard, std::vector<int>& history){
+	for(auto& m: history){
+		MakeMove(chessboard, m, 0);
+	}
+}
 void MyAI::generateMove(char move[6])
 {
 #ifdef WINDOWS
@@ -258,40 +264,92 @@ void MyAI::generateMove(char move[6])
 #else
 	gettimeofday(&begin, 0);
 #endif
-	// Expand
-	std::deque<MoveInfo> Moves;
-	Expand(&main_chessboard, this->Color, Moves, nullptr);
-	int move_count = Moves.size();
 
-	// Create children
-	std::vector<ChessBoard> Children(move_count);
-	std::vector<double> Children_Scores(move_count, 0);
+	MCTree tree;
+	int par = tree.expand(-1, -1); // depth = 0, current board.
+	assert(par == 0);
+	assert(tree.parent_id[0] == -1);
+	assert(tree.depth[0] == 0);
 
-	for(int i = 0; i < move_count; ++i){
-		Children[i] = main_chessboard;
-		MakeMove(&Children[i], Moves[i].num(), 0); // 0: dummy
-	}
-
-	// MCS_pure
-	int total_simulate_count = 0;
-	int best_child_id = 0;
 	while(!isTimeUp()){
-		// simulate every child <SIMULATE_COUNT_PER_CHILD> times
-		for(int i = 0; i < move_count; ++i){
+		int tcolor = this->Color ^ (tree.depth[par] % 2);		// depth even: my color
+		ChessBoard root_chessboard = this->main_chessboard;		// copy
+		fastForward(&root_chessboard, tree.histories[par]);
+		// Expand
+		std::deque<MoveInfo> Moves;
+		Expand(&root_chessboard, tcolor, Moves, nullptr);
+
+		for(auto& m: Moves){
+			int id = tree.expand(par, m.num());
+			ChessBoard new_chessboard = root_chessboard;		// copy
+			MakeMove(&new_chessboard, m.num(), 0);				// already made move, so next in simulate must be opponent.
+			
+			// run simulation
 			double total_score = 0;
 			for(int k = 0; k < SIMULATE_COUNT_PER_CHILD; ++k){
-				total_score += Simulate(Children[i]);
+				total_score += Simulate(new_chessboard, tcolor);
 			}
-			Children_Scores[i] += total_score;
-			if (Children_Scores[i] > Children_Scores[best_child_id]){
-				best_child_id = i;
-			}
+			tree.update(id, total_score, SIMULATE_COUNT_PER_CHILD);
 		}
-		total_simulate_count += SIMULATE_COUNT_PER_CHILD;
+		par = tree.pv_leaf();
 	}
 
+	std::deque<MoveInfo> Moves;
+	std::vector<double> Children_Scores;
+	std::vector<int> Children_Trials;
+	int best_child_id = 0;
+	int max_depth = tree.max_depth;
+
+	// children of first node is what we are after
+	for(auto& i: tree.children_ids[0]){
+		assert(tree.histories[i].size() == 1);
+		assert(tree.depth[i] == 1);
+		int move = tree.histories[i].front();
+		double score = tree.score(i);
+		Moves.push_back(MoveInfo(this->main_chessboard.Board, move/100, move%100));
+		Children_Scores.push_back(score);
+		Children_Trials.push_back(tree.n_trials[i]);
+		if (score > Children_Scores[best_child_id]){
+			best_child_id = Children_Scores.size() - 1;
+		}
+	}
+	
+
+
+	// // Expand
+	// std::deque<MoveInfo> Moves;
+	// Expand(&main_chessboard, this->Color, Moves, nullptr);
+	// int move_count = Moves.size();
+
+	// // Create children
+	// std::vector<ChessBoard> Children(move_count);
+	// std::vector<double> Children_Scores(move_count, 0);
+
+	// for(int i = 0; i < move_count; ++i){
+	// 	Children[i] = main_chessboard;
+	// 	MakeMove(&Children[i], Moves[i].num(), 0); // 0: dummy
+	// }
+
+	// // MCS_pure
+	// int total_simulate_count = 0;
+	// int best_child_id = 0;
+	// while(!isTimeUp()){
+	// 	// simulate every child <SIMULATE_COUNT_PER_CHILD> times
+	// 	for(int i = 0; i < move_count; ++i){
+	// 		double total_score = 0;
+	// 		for(int k = 0; k < SIMULATE_COUNT_PER_CHILD; ++k){
+	// 			total_score += Simulate(Children[i], this->Color);
+	// 		}
+	// 		Children_Scores[i] += total_score;
+	// 		if (Children_Scores[i] > Children_Scores[best_child_id]){
+	// 			best_child_id = i;
+	// 		}
+	// 	}
+	// 	total_simulate_count += SIMULATE_COUNT_PER_CHILD;
+	// }
+
 	// Log
-	for(int i = 0; i < move_count; ++i){
+	for(int i = 0; i < (int)Moves.size(); ++i){
 		char tmp[6];
 		int tmp_start = Moves[i].from_location_no;
 		int tmp_end   = Moves[i].to_location_no;
@@ -299,7 +357,7 @@ void MyAI::generateMove(char move[6])
 		sprintf(tmp, "%c%c-%c%c",'a'+(tmp_start%4),'1'+(7-tmp_start/4),'a'+(tmp_end%4),'1'+(7-tmp_end/4));
 
 		fprintf(stderr, "%2d. Move: %s, Score: %+5lf, Sim_Count: %7d\n",
-			i+1, tmp, Children_Scores[i]/total_simulate_count, total_simulate_count);
+			i+1, tmp, Children_Scores[i], Children_Trials[i]);
 		fflush(stderr);
 	}
 
@@ -313,7 +371,7 @@ void MyAI::generateMove(char move[6])
 	Pirnf_Chess(main_chessboard.Board[StartPoint], chess_Start);
 	Pirnf_Chess(main_chessboard.Board[EndPoint], chess_End);
 	printf("My result: \n--------------------------\n");
-	printf("MCS_pure: %lf (simulation count: %d)\n", Children_Scores[0]/total_simulate_count, total_simulate_count);
+	printf("MCTS: %lf (simulation count: %d, max depth: %d)\n", Children_Scores[best_child_id], Children_Trials[best_child_id], max_depth);
 	printf("(%d) -> (%d)\n",StartPoint,EndPoint);
 	printf("<%s> -> <%s>\n",chess_Start,chess_End);
 	printf("move:%s\n",move);
@@ -724,81 +782,148 @@ double evalColor(const ChessBoard *chessboard, const std::deque<MoveInfo> &Moves
 	return value / (max_value + 64*w_mob);
 }
 
+// // always use my point of view, so use this->Color
+// double MyAI::Evaluate(const ChessBoard *chessboard,
+// 					  const std::deque<MoveInfo> &Moves, const int color)
+// {
+// 	// score = My Score - Opponent's Score
+// 	// offset = <WIN + BONUS> to let score always not less than zero
+
+// 	double score = 0;
+// 	bool finish;
+// 	int legal_move_count = Moves.size();
+
+// 	if (legal_move_count == 0)
+// 	{ // Win, Lose
+// 		if (color == this->Color)
+// 		{ // Lose
+// 			score += LOSE - WIN;
+// 		}
+// 		else
+// 		{ // Win
+// 			score += WIN - LOSE;
+// 		}
+// 		finish = true;
+// 	}
+// 	else if (isDraw(chessboard))
+// 	{ // Draw
+// 		// score = DRAW - DRAW;
+// 		finish = false;
+// 	}
+// 	else
+// 	{ // no conclusion
+
+// 		// Material
+// 		std::deque<MoveInfo> otherMoves;
+
+// 		Expand(chessboard, (color == RED) ? BLACK : RED, otherMoves, nullptr);
+
+// 		double piece_value;
+// 		double red_value = evalColor(chessboard, (color == RED) ? Moves : otherMoves, RED, false);
+// 		double black_value = evalColor(chessboard, (color == BLACK) ? Moves : otherMoves, BLACK, false);
+// 		piece_value = (red_value - black_value) * (this->Color == RED ? 1 : -1);
+
+// 		// linear map to (-<WIN>, <WIN>)
+// 		// <ORIGINAL_SCORE> / <ORIGINAL_SCORE_MAX_VALUE> * (<WIN> - 0.01)
+// 		piece_value = piece_value / 1.0 * (WIN - 0.01);
+
+// 		score += piece_value;
+// 		finish = false;
+// 	}
+
+// 	// Bonus (Only Win / Draw)
+// 	if (finish)
+// 	{
+// 		std::deque<MoveInfo> plh; // place holder
+// 		double piece_value;
+// 		double red_value = evalColor(chessboard, plh, RED, true);
+// 		double black_value = evalColor(chessboard, plh, BLACK, true);
+// 		piece_value = (red_value - black_value) * (this->Color == RED ? 1 : -1);
+
+// 		if(legal_move_count == 0 && color == this->Color){ // I lose
+// 			if(piece_value > 0){ // but net value > 0
+// 				piece_value = 0;
+// 			}
+// 		}else if(legal_move_count == 0 && color != this->Color){ // Opponent lose
+// 			if(piece_value < 0){ // but net value < 0
+// 				piece_value = 0;
+// 			}
+// 		}
+
+// 		// linear map to [-<BONUS>, <BONUS>]
+// 		// score max value = 1*5 + 180*2 + 6*2 + 18*2 + 90*2 + 270*2 + 810*1 = 1943
+// 		// <ORIGINAL_SCORE> / <ORIGINAL_SCORE_MAX_VALUE> * <BONUS>
+// 		piece_value = piece_value / 1.0 * BONUS;
+// 		score += piece_value; 
+// 	}
+
+// 	return score;
+// }
+
 // always use my point of view, so use this->Color
 double MyAI::Evaluate(const ChessBoard *chessboard,
-					  const std::deque<MoveInfo> &Moves, const int color)
-{
+	const std::deque<MoveInfo> &Moves, const int color){
 	// score = My Score - Opponent's Score
-	// offset = <WIN + BONUS> to let score always not less than zero
-
 	double score = 0;
-	bool finish;
 	int legal_move_count = Moves.size();
 
-	if (legal_move_count == 0)
-	{ // Win, Lose
-		if (color == this->Color)
-		{ // Lose
+	if(legal_move_count == 0){ // Win, Lose
+		if(color == this->Color){ // Lose
 			score += LOSE - WIN;
-		}
-		else
-		{ // Win
+		}else{ // Win
 			score += WIN - LOSE;
 		}
-		finish = true;
-	}
-	else if (isDraw(chessboard))
-	{ // Draw
+	}else if(isDraw(chessboard)){ // Draw
 		// score = DRAW - DRAW;
-		finish = false;
-	}
-	else
-	{ // no conclusion
-
-		// Material
-		std::deque<MoveInfo> otherMoves;
-
-		Expand(chessboard, (color == RED) ? BLACK : RED, otherMoves, nullptr);
-
-		double piece_value;
-		double red_value = evalColor(chessboard, (color == RED) ? Moves : otherMoves, RED, false);
-		double black_value = evalColor(chessboard, (color == BLACK) ? Moves : otherMoves, BLACK, false);
-		piece_value = (red_value - black_value) * (this->Color == RED ? 1 : -1);
-
-		// linear map to (-<WIN>, <WIN>)
-		// <ORIGINAL_SCORE> / <ORIGINAL_SCORE_MAX_VALUE> * (<WIN> - 0.01)
-		piece_value = piece_value / 1.0 * (WIN - 0.01);
-
-		score += piece_value;
-		finish = false;
 	}
 
 	// Bonus (Only Win / Draw)
-	if (finish)
-	{
-		std::deque<MoveInfo> plh; // place holder
-		double piece_value;
-		double red_value = evalColor(chessboard, plh, RED, true);
-		double black_value = evalColor(chessboard, plh, BLACK, true);
-		piece_value = (red_value - black_value) * (this->Color == RED ? 1 : -1);
+	// static material values
+	// empty is zero
+	const double values[14] = {
+		1,180,  6, 18, 90,270,810,  
+		1,180,  6, 18, 90,270,810
+	};
 
-		if(legal_move_count == 0 && color == this->Color){ // I lose
-			if(piece_value > 0){ // but net value > 0
-				piece_value = 0;
-			}
-		}else if(legal_move_count == 0 && color != this->Color){ // Opponent lose
-			if(piece_value < 0){ // but net value < 0
-				piece_value = 0;
+	double piece_value = 0;
+	// flipped
+	for(int i = 0; i < 32; i++){
+		if(chessboard->Board[i] != CHESS_EMPTY && 
+			chessboard->Board[i] != CHESS_COVER){
+			if(chessboard->Board[i] / 7 == this->Color){
+				piece_value += values[chessboard->Board[i]];
+			}else{
+				piece_value -= values[chessboard->Board[i]];
 			}
 		}
-
-		// linear map to [-<BONUS>, <BONUS>]
-		// score max value = 1*5 + 180*2 + 6*2 + 18*2 + 90*2 + 270*2 + 810*1 = 1943
-		// <ORIGINAL_SCORE> / <ORIGINAL_SCORE_MAX_VALUE> * <BONUS>
-		piece_value = piece_value / 1.0 * BONUS;
-		score += piece_value; 
+	}
+	// covered
+	for(int i = 0; i < 14; ++i){
+		if(chessboard->CoverChess[i] > 0){
+			if(i / 7 == this->Color){
+				piece_value += chessboard->CoverChess[i] * values[i];
+			}else{
+				piece_value -= chessboard->CoverChess[i] * values[i];
+			}
+		}
 	}
 
+	if(legal_move_count == 0 && color == this->Color){ // I lose
+		if(piece_value > 0){ // but net value > 0
+			piece_value = 0;
+		}
+	}else if(legal_move_count == 0 && color != this->Color){ // Opponent lose
+		if(piece_value < 0){ // but net value < 0
+			piece_value = 0;
+		}
+	}
+
+	// linear map to [-<BONUS>, <BONUS>]
+	// score max value = 1*5 + 180*2 + 6*2 + 18*2 + 90*2 + 270*2 + 810*1 = 1943
+	// <ORIGINAL_SCORE> / <ORIGINAL_SCORE_MAX_VALUE> * <BONUS>
+	piece_value = piece_value / 1943 * BONUS;
+	score += piece_value; 
+	
 	return score;
 }
 
@@ -847,10 +972,10 @@ double MyAI::SEE(const ChessBoard *chessboard, const int position, const int col
 		std::sort(BlackCands.begin(), BlackCands.end(), comp);
 	// sort descending, will be accessed from the back
 
-	for(int i = 1; i < RedCands.size(); i++){
+	for(size_t i = 1; i < RedCands.size(); i++){
 		assert(values[board[RedCands[i]]] <= values[board[RedCands[i]]]);
 	}
-	for(int i = 1; i < BlackCands.size(); i++){
+	for(size_t i = 1; i < BlackCands.size(); i++){
 		assert(values[board[BlackCands[i]]] <= values[board[BlackCands[i]]]);
 	}
 
@@ -888,9 +1013,10 @@ double MyAI::SEE(const ChessBoard *chessboard, const int position, const int col
 
 	return gain;
 }
-double MyAI::Simulate(ChessBoard chessboard){
-	
-	int turn_color = this->Color ^ 1;
+double MyAI::Simulate(ChessBoard chessboard, const int color){
+	// color is the player previous moved
+	// int turn_color = this->Color ^ 1;
+	int turn_color = color ^ 1;
 
 	while(true){
 		// Expand
@@ -912,11 +1038,11 @@ double MyAI::Simulate(ChessBoard chessboard){
 		// 	}
 		// }
 		for(int i = 0; i < eatNum; i++){
-			assert(Moves[i].to_chess_no >= 0);
+			assert(Moves[i].to_chess_no != CHESS_EMPTY);
 		}
 
 		// Random Move
-		int move_id = (eatNum == 0 || randIndex(2)) ? randIndex(moveNum) : randIndex(eatNum);
+		int move_id = (eatNum != 0 && randIndex(2)) ? randIndex(eatNum) : randIndex(moveNum);
 		MakeMove(&chessboard, Moves[move_id].num(), 0); // 0: dummy
 
 		// Change color
