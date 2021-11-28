@@ -8,10 +8,10 @@
 #include <time.h>
 #include <stdint.h>
 #include "pcg_basic.h"
+#include <array>
 #include <vector>
 #include <deque>
 #include <random>
-#include <cassert>
 
 #define RED 0
 #define BLACK 1
@@ -21,15 +21,16 @@
 
 class ChessBoard{
 public:
-	int Board[32];
-	int Prev[32];
-	int Next[32];
+	std::array<int, 32> Board;
+	std::array<int, 32> Prev;
+	std::array<int, 32> Next;
 	int RedHead, BlackHead;
-	int CoverChess[14];
-	int AliveChess[14];
+	std::array<int, 14> CoverChess;
+	std::array<int, 14> AliveChess;
 	int Red_Chess_Num, Black_Chess_Num;
 	int NoEatFlip;
 	std::vector<int> History;
+	std::array<bool, 2> cantWin;
 };
 
 class MoveInfo{
@@ -39,7 +40,7 @@ public:
 	int from_location_no;
 	int to_location_no;
 	MoveInfo(){};
-	MoveInfo(const int *board, int from, int to){
+	MoveInfo(const std::array<int, 32>& board, int from, int to){
 		from_location_no = from;
 		to_location_no = to;
 		from_chess_no = board[from];
@@ -51,6 +52,7 @@ public:
 };
 
 class MCTree{
+	double _c;
 public:
 	int max_depth;
 	std::vector<std::vector<int>> histories;
@@ -59,9 +61,9 @@ public:
 	std::vector<int> parent_id;
 	std::vector<int> depth;
 	std::vector<std::vector<int>> children_ids;
-	MCTree():max_depth(0),histories(),sum_scores(),n_trials(),parent_id(),depth(),children_ids(){};
+	MCTree(double exploration):_c(exploration),max_depth(0),histories(),sum_scores(),n_trials(),parent_id(),depth(),children_ids(){};
 
-	double score(int i) {
+	inline double score(int i) {
 		return sum_scores[i] / n_trials[i];
 	}
 	int expand(int parent, int new_move){
@@ -70,7 +72,6 @@ public:
 		if (parent != -1){
 			new_hist = histories[parent]; // copy
 			new_hist.push_back(new_move);
-			assert(new_hist.size() == histories[parent].size() + 1);			
 		}
 		histories.push_back(new_hist);
 		sum_scores.push_back(0);
@@ -84,25 +85,25 @@ public:
 		return id;
 	}
 	void update(int i, double sum, int trials){
-		// TODO: use while
-		if (i == -1) return;
-		sum_scores[i] += sum;
-		n_trials[i] += trials;
-		update(parent_id[i], sum, trials);
+		while(i != -1){
+			sum_scores[i] += sum;
+			n_trials[i] += trials;
+			i = parent_id[i];
+		}
 	}
 	int pv_leaf(){
-		/* Minimax:
-			0: max node
-			1: min node
-			etc.
-		*/
 		int par = 0;
 		while(!children_ids[par].empty()){	
-			double co = (depth[par]&1 ? -1 : 1);
-			int best_ch = children_ids[par].front();
+			double co = (depth[par]&1 ? -1 : 1); // Minimax
+			double log_N = std::log(n_trials[par]);
+			int best_ch = -1;
+			double best_score;
 			for(auto& ch: children_ids[par]){
-				if(co*score(ch) > co*score(best_ch))
+				double cur_score = co*score(ch) + _c*std::sqrt(log_N / n_trials[ch]);
+				if(best_ch == -1 || cur_score > best_score){
 					best_ch = ch;
+					best_score = cur_score;
+				}
 			}
 			par = best_ch;
 		}
@@ -174,18 +175,13 @@ private:
 	int ConvertChessNo(int input);
 	bool isTimeUp();
 	uint32_t randIndex(uint32_t max);
-	template<class T>
-	T randItem(const std::deque<T>& container){
-		uint32_t i = randIndex(container.size());
-		return container[i];
-	};
 
 	// Board
 	void initBoardState();
 	void generateMove(char move[6]);
 	void MakeMove(ChessBoard* chessboard, const int move, const int chess);
 	void MakeMove(ChessBoard* chessboard, const char move[6]);
-	bool Referee(const int *board, const int Startoint, const int EndPoint, const int color);
+	bool Referee(const std::array<int, 32>& board, const int Startoint, const int EndPoint, const int color);
 	void Expand(const ChessBoard *chessboard, const int color, std::deque<MoveInfo> &Result, int* num_eats);
 	double Evaluate(const ChessBoard *chessboard, const std::deque<MoveInfo> &Moves, const int color);
 	double Simulate(ChessBoard chessboard, const int color);
