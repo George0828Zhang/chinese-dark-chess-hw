@@ -12,6 +12,7 @@
 #include <vector>
 #include <deque>
 #include <random>
+#include <cfloat>
 
 #define RED 0
 #define BLACK 1
@@ -60,8 +61,9 @@ public:
 	std::vector<int> n_trials;
 	std::vector<int> parent_id;
 	std::vector<int> depth;
+	std::vector<bool> dead;
 	std::vector<std::vector<int>> children_ids;
-	MCTree(double exploration):_c(exploration),max_depth(0),histories(),sum_scores(),n_trials(),parent_id(),depth(),children_ids(){};
+	MCTree(double exploration):_c(exploration),max_depth(0),histories(),sum_scores(),n_trials(),parent_id(),depth(),dead(),children_ids(){};
 
 	inline double score(int i) {
 		return sum_scores[i] / n_trials[i];
@@ -78,6 +80,7 @@ public:
 		n_trials.push_back(0);
 		parent_id.push_back(parent);
 		depth.push_back(parent == -1 ? 0 : (depth[parent]+1));
+		dead.push_back(false);
 		children_ids.push_back(std::vector<int>());
 		if (parent != -1)
 			children_ids[parent].push_back(id);
@@ -91,16 +94,19 @@ public:
 			i = parent_id[i];
 		}
 	}
+	void mark_dead(int i){
+		dead[i] = true;
+	}
 	int pv_leaf(){
 		int par = 0;
 		while(!children_ids[par].empty()){	
 			double co = (depth[par]&1 ? -1 : 1); // Minimax
 			double log_N = std::log(n_trials[par]);
-			int best_ch = -1;
-			double best_score;
+			int best_ch = 0;
+			double best_score = -DBL_MAX;
 			for(auto& ch: children_ids[par]){
 				double cur_score = co*score(ch) + _c*std::sqrt(log_N / n_trials[ch]);
-				if(best_ch == -1 || cur_score > best_score){
+				if(!dead[ch] && cur_score > best_score){
 					best_ch = ch;
 					best_score = cur_score;
 				}

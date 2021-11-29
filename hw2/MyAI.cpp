@@ -14,7 +14,7 @@
 #include <cmath>
 #include <cassert>
 
-#define NOASSERT
+// #define NOASSERT
 #ifdef NOASSERT
 #undef assert
 #define assert(x) ((void)0)
@@ -274,15 +274,22 @@ void MyAI::generateMove(char move[6])
 	assert(tree.parent_id[0] == -1);
 	assert(tree.depth[0] == 0);
 
-	// TODO: use queue to store ChessBoard?
-	while(!isTimeUp()){
+	int prev_par = -1;
+	while(!isTimeUp() && par != prev_par){
 		int tcolor = this->Color ^ (tree.depth[par] % 2);		// depth even: my color
 		ChessBoard root_chessboard = this->main_chessboard;		// copy
 		fastForward(&root_chessboard, tree.histories[par]);
 		// Expand
 		std::deque<MoveInfo> Moves;
 		Expand(&root_chessboard, tcolor, Moves, nullptr);
-
+		if (Moves.size() == 0){
+			if(Evaluate(&root_chessboard, Moves, tcolor) >= WIN){
+				// Win -> do nothing, the loop will break.
+			}
+			else{
+				tree.mark_dead(par);
+			}
+		}
 		for(auto& m: Moves){
 			int id = tree.expand(par, m.num());
 			ChessBoard new_chessboard = root_chessboard;		// copy
@@ -295,6 +302,7 @@ void MyAI::generateMove(char move[6])
 			}
 			tree.update(id, total_score, SIMULATE_COUNT_PER_CHILD);
 		}
+		prev_par = par;
 		par = tree.pv_leaf();
 	}
 
@@ -304,6 +312,7 @@ void MyAI::generateMove(char move[6])
 	int best_child_id = 0;
 	int max_depth = tree.max_depth;
 	int sim_count = tree.n_trials[0];
+	bool early_stop = par == -1 || prev_par == par;
 
 	// children of first node is what we are after
 	for(auto& i: tree.children_ids[0]){
@@ -379,7 +388,7 @@ void MyAI::generateMove(char move[6])
 	Pirnf_Chess(main_chessboard.Board[StartPoint], chess_Start);
 	Pirnf_Chess(main_chessboard.Board[EndPoint], chess_End);
 	printf("My result: \n--------------------------\n");
-	printf("MCTS: %lf (total simulations: %d, tree depth: %d)\n", Children_Scores[best_child_id], sim_count, max_depth);
+	printf("MCTS: %lf (total simulations: %d, tree depth: %d%s)\n", Children_Scores[best_child_id], sim_count, max_depth, early_stop ? ", early stopped" : "");
 	printf("(%d) -> (%d)\n",StartPoint,EndPoint);
 	printf("<%s> -> <%s>\n",chess_Start,chess_End);
 	printf("move:%s\n",move);
