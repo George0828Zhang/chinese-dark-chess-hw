@@ -184,9 +184,9 @@ private:
 	bool Referee(const std::array<int, 32>& board, const int Startoint, const int EndPoint, const int color);
 	void Expand(const ChessBoard *chessboard, const int color, std::deque<MoveInfo> &Result, int* num_eats);
 	double Evaluate(const ChessBoard *chessboard, const std::deque<MoveInfo> &Moves, const int color);
-	double Simulate(ChessBoard chessboard, const int color);
+	double Simulate(ChessBoard chessboard, const int color, const int max_depth);
 	bool isDraw(const ChessBoard* chessboard);
-	bool isFinish(const ChessBoard *chessboard, const std::deque<MoveInfo> &Moves, const int eatNum, const int color);
+	bool isFinish(const ChessBoard *chessboard, const std::deque<MoveInfo> &Moves, const int eatNum, const int color, const int remain_depth);
 	double SEE(const ChessBoard *chessboard, const int position, const int color);
 	void fastForward(ChessBoard* chessboard, std::vector<int>& history);
 
