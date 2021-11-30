@@ -7,6 +7,7 @@
 #endif
 
 #include "MyAI.h"
+#include "MCTree.hpp"
 #include <algorithm>
 #include <array>
 #include <deque>
@@ -23,9 +24,10 @@
 #define TIME_LIMIT 9.5
 
 #define WIN 1.0
-#define DRAW 0.2
-#define LOSE 0.0
-#define BONUS 0.3
+#define DRAW 0.2*WIN
+#define LOSE 0.0*WIN
+#define BONUS 0.3*WIN
+#define MIDDLE 0.98
 
 #define MAX_SCORE (WIN + BONUS)
 
@@ -267,8 +269,8 @@ void MyAI::generateMove(char move[6])
 	gettimeofday(&begin, 0);
 #endif
 
-	// int num_chess = this->main_chessboard.Red_Chess_Num + this->main_chessboard.Black_Chess_Num;
-	MCTree tree(1.18);
+	int num_chess = this->main_chessboard.Red_Chess_Num + this->main_chessboard.Black_Chess_Num;
+	MCTree tree(num_chess < 16 ? 0.88 : 1.18, 1.0);
 	int par = tree.expand(-1, -1); // depth = 0, current board.
 	assert(par == 0);
 	assert(tree.parent_id[0] == -1);
@@ -297,17 +299,21 @@ void MyAI::generateMove(char move[6])
 			
 			// run simulation
 			double total_score = 0;
+			double total_square = 0;
 			for(int k = 0; k < SIMULATE_COUNT_PER_CHILD; ++k){
-				total_score += Simulate(new_chessboard, tcolor, 60);
+				double sc = Simulate(new_chessboard, tcolor, 60);
+				total_score += sc;
+				total_square += sc*sc;
 			}
-			tree.update(id, total_score, SIMULATE_COUNT_PER_CHILD);
+			tree.update(id, total_score, total_square, SIMULATE_COUNT_PER_CHILD);
 		}
 		prev_par = par;
-		par = tree.pv_leaf();
+		par = tree.pv_leaf(0);
 	}
 
 	std::deque<MoveInfo> Moves;
 	std::vector<double> Children_Scores;
+	std::vector<double> Children_Vars;
 	std::vector<int> Children_Trials;
 	int best_child_id = 0;
 	int max_depth = tree.max_depth;
@@ -319,10 +325,11 @@ void MyAI::generateMove(char move[6])
 		assert(tree.histories[i].size() == 1);
 		assert(tree.depth[i] == 1);
 		int move = tree.histories[i].front();
-		double score = tree.score(i);
+		double score = tree.Average[i];
 		int trials = tree.n_trials[i];
 		Moves.push_back(MoveInfo(this->main_chessboard.Board, move/100, move%100));
 		Children_Scores.push_back(score);
+		Children_Vars.push_back(tree.Variance[i]);
 		Children_Trials.push_back(trials);
 		if (score > Children_Scores[best_child_id] ||
 			(score == Children_Scores[best_child_id] && trials > Children_Trials[best_child_id])
@@ -330,40 +337,6 @@ void MyAI::generateMove(char move[6])
 			best_child_id = Children_Scores.size() - 1;
 		}
 	}
-	
-
-
-	// // Expand
-	// std::deque<MoveInfo> Moves;
-	// Expand(&main_chessboard, this->Color, Moves, nullptr);
-	// int move_count = Moves.size();
-
-	// // Create children
-	// std::vector<ChessBoard> Children(move_count);
-	// std::vector<double> Children_Scores(move_count, 0);
-
-	// for(int i = 0; i < move_count; ++i){
-	// 	Children[i] = main_chessboard;
-	// 	MakeMove(&Children[i], Moves[i].num(), 0); // 0: dummy
-	// }
-
-	// // MCS_pure
-	// int total_simulate_count = 0;
-	// int best_child_id = 0;
-	// while(!isTimeUp()){
-	// 	// simulate every child <SIMULATE_COUNT_PER_CHILD> times
-	// 	for(int i = 0; i < move_count; ++i){
-	// 		double total_score = 0;
-	// 		for(int k = 0; k < SIMULATE_COUNT_PER_CHILD; ++k){
-	// 			total_score += Simulate(Children[i], this->Color);
-	// 		}
-	// 		Children_Scores[i] += total_score;
-	// 		if (Children_Scores[i] > Children_Scores[best_child_id]){
-	// 			best_child_id = i;
-	// 		}
-	// 	}
-	// 	total_simulate_count += SIMULATE_COUNT_PER_CHILD;
-	// }
 
 	// Log
 	for(int i = 0; i < (int)Moves.size(); ++i){
@@ -373,8 +346,8 @@ void MyAI::generateMove(char move[6])
 		// change int to char
 		sprintf(tmp, "%c%c-%c%c",'a'+(tmp_start%4),'1'+(7-tmp_start/4),'a'+(tmp_end%4),'1'+(7-tmp_end/4));
 
-		fprintf(stderr, "%2d. Move: %s, Score: %+5lf, Sim_Count: %7d\n",
-			i+1, tmp, Children_Scores[i], Children_Trials[i]);
+		fprintf(stderr, "%2d. Move: %s, Score: %+5lf, Var: %+5lf, Sim_Count: %7d\n",
+			i+1, tmp, Children_Scores[i], Children_Vars[i], Children_Trials[i]);
 		fflush(stderr);
 	}
 
@@ -894,8 +867,7 @@ double MyAI::Evaluate(const ChessBoard *chessboard,
 		);
 
 		// linear map to (-<WIN>, <WIN>)
-		piece_value = piece_value / 1.0 * (WIN - LOSE - 0.01);
-		assert((piece_value < WIN - LOSE) && (piece_value > LOSE - WIN));
+		piece_value = piece_value / 1.0 * MIDDLE;
 
 		score += piece_value;
 		finish = false;
