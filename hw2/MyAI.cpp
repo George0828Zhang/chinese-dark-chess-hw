@@ -15,7 +15,7 @@
 #include <cmath>
 #include <cassert>
 
-#define NOASSERT
+// #define NOASSERT
 #ifdef NOASSERT
 #undef assert
 #define assert(x) ((void)0)
@@ -257,9 +257,9 @@ void MyAI::initBoardState()
 }
 
 
-void MyAI::fastForward(ChessBoard* chessboard, std::vector<int>& history){
+void MyAI::fastForward(ChessBoard* chessboard, std::vector<MoveInfo>& history){
 	for(auto& m: history){
-		MakeMove(chessboard, m, 0);
+		MakeMove(chessboard, m.num(), 0);
 	}
 }
 void MyAI::generateMove(char move[6])
@@ -272,8 +272,8 @@ void MyAI::generateMove(char move[6])
 
 	// int num_chess = this->main_chessboard.Red_Chess_Num + this->main_chessboard.Black_Chess_Num;
 	// MCTree tree(num_chess < 16 ? 0.88 : 1.18, 1.0);
-	MCTree tree(1.18, 1.0); // 0.23, 0.18
-	int par = tree.expand(-1, -1); // depth = 0, current board.
+	MCTree tree(0.88, 1.0); // performance 1.18 >> 0.23 > 0.2
+	int par = tree.expand(-1, MoveInfo()); // depth = 0, current board.
 	assert(par == 0);
 	assert(tree.parent_id[0] == -1);
 	assert(tree.depth[0] == 0);
@@ -296,15 +296,15 @@ void MyAI::generateMove(char move[6])
 		else if (tree.children_ids[par].size() == 0){
 			// Expand
 			for(auto& m: Moves){
-				tree.expand(par, m.num());
+				tree.expand(par, m);
 			}
 		}
 
 		// clear propogation buffer
-		tree.clear_stats_buff();
+		tree.clear_stats_buff_and_hash();
 		for(auto& id: tree.children_ids[par]){
 			assert(!tree.histories[id].empty());
-			int move = tree.histories[id].back();
+			int move = tree.histories[id].back().num();
 			ChessBoard new_chessboard = root_chessboard;		// copy
 			MakeMove(&new_chessboard, move, 0);				// already made move, so next in simulate must be opponent.
 			
@@ -318,7 +318,7 @@ void MyAI::generateMove(char move[6])
 			}
 			tree.update_leaf(id, total_score, total_square, SIMULATE_COUNT_PER_CHILD);
 		}
-		tree.propogate(par);
+		tree.propagate(par);
 
 		prev_par = par;
 		par = tree.pv_leaf(0);
@@ -331,52 +331,62 @@ void MyAI::generateMove(char move[6])
 		}
 	}
 
-	std::deque<MoveInfo> Moves;
-	std::vector<double> Children_Scores;
-	std::vector<double> Children_Vars;
-	std::vector<int> Children_Trials;
-	int best_child_id = 0;
 	int max_depth = tree.max_depth;
 	int sim_count = tree.n_trials[0];
+	int amaf_count = tree.n_trials_amaf[0];
+	int n_pruned = 0; //tree.n_pruned;
 	bool early_stop = par == -1 || prev_par == par;
 
+	double best_score = -DBL_MAX;
+	double best_variance = DBL_MAX;
+	int StartPoint = -1;
+	int EndPoint = -1;
+
 	// children of first node is what we are after
+	assert(tree.children_ids[0].size() > 0);
 	for(auto& i: tree.children_ids[0]){
 		assert(tree.histories[i].size() == 1);
 		assert(tree.depth[i] == 1);
-		int move = tree.histories[i].front();
+		int move = tree.histories[i].back().num();
 		double score = tree.Average[i];
+		double var = tree.Variance[i];
 		int trials = tree.n_trials[i];
-		Moves.push_back(MoveInfo(this->main_chessboard.Board, move/100, move%100));
-		Children_Scores.push_back(score);
-		Children_Vars.push_back(tree.Variance[i]);
-		Children_Trials.push_back(trials);
-		if (score > Children_Scores[best_child_id] ||
-			(score == Children_Scores[best_child_id] && trials > Children_Trials[best_child_id])
-		){
-			best_child_id = Children_Scores.size() - 1;
-		}
-	}
+		int amafs = tree.n_trials_amaf[i];
+		bool dead = tree.dead[i];
 
-	// Log
-	for(int i = 0; i < (int)Moves.size(); ++i){
+		// Log
 		char tmp[6];
-		int tmp_start = Moves[i].from_location_no;
-		int tmp_end   = Moves[i].to_location_no;
+		int tmp_start = move/100;
+		int tmp_end   = move%100;
 		// change int to char
 		sprintf(tmp, "%c%c-%c%c",'a'+(tmp_start%4),'1'+(7-tmp_start/4),'a'+(tmp_end%4),'1'+(7-tmp_end/4));
 
-		fprintf(stderr, "%2d. Move: %s, Score: %+5lf, Var: %+5lf, Sim_Count: %7d\n",
-			i+1, tmp, Children_Scores[i], Children_Vars[i], Children_Trials[i]);
-		fflush(stderr);
+		// fprintf(stderr, "%2d. Move: %s, Score: %+5lf, Var: %5lf, Sim_Count: %7d%s\n",
+		// 	i, tmp, score, var, trials, dead?" D":"");
+		fprintf(stderr, "%2d. Move: %s, Score: %+5lf, Var: %5lf, Sim_Count: %7d Rave: %8d%s\n",
+			i, tmp, score, var, trials, trials+amafs, dead?" D":"");
+
+		if (score > best_score ||
+			(score == best_score && var < best_variance)
+		){
+			StartPoint = tmp_start;
+			EndPoint = tmp_end;
+			best_score = score;
+			best_variance = var;
+		}
 	}
-	char msg[256];
-	sprintf(msg, "MCTS: %lf (total simulations: %d, tree depth: %d%s)\n", Children_Scores[best_child_id], sim_count, max_depth, early_stop ? ", early stopped" : "");
-	fprintf(stderr, "%s", msg);
+
+	char msg[200];
+	sprintf(msg, "%lf (total simulations: %d, rave: %d, tree depth: %d, cut: %d%s)", best_score, sim_count, sim_count+amaf_count, max_depth, n_pruned, early_stop ? ", early stopped" : "");
+	fprintf(stderr, "Best: %s\n", msg); 
+	fflush(stderr);
+
+	assert(StartPoint >= 0);
+	assert(EndPoint >= 0);
 
 	// set return value
-	int StartPoint = Moves[best_child_id].from_location_no;
-	int EndPoint = Moves[best_child_id].to_location_no;
+	// int StartPoint = Moves[best_child_id].from_location_no;
+	// int EndPoint = Moves[best_child_id].to_location_no;
 	sprintf(move, "%c%c-%c%c",'a'+(StartPoint%4),'1'+(7-StartPoint/4),'a'+(EndPoint%4),'1'+(7-EndPoint/4));
 	
 	

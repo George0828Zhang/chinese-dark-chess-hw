@@ -129,7 +129,7 @@ private:
 	bool isDraw(const ChessBoard* chessboard);
 	bool isFinish(const ChessBoard *chessboard, const std::deque<MoveInfo> &Moves, const int eatNum, const int color, const int remain_depth);
 	double SEE(const ChessBoard *chessboard, const int position, const int color);
-	void fastForward(ChessBoard* chessboard, std::vector<int>& history);
+	void fastForward(ChessBoard* chessboard, std::vector<MoveInfo>& history);
 
 	// Display
 	void Pirnf_Chess(int chess_no,char *Result);
