@@ -47,7 +47,7 @@ public:
 		from_chess_no = board[from];
 		to_chess_no = board[to];
 	};
-	int num(){
+	int num() const {
 		return from_location_no * 100 + to_location_no;
 	};
 };
@@ -124,7 +124,7 @@ private:
 	void MakeMove(ChessBoard* chessboard, const char move[6]);
 	bool Referee(const std::array<int, 32>& board, const int Startoint, const int EndPoint, const int color);
 	void Expand(const ChessBoard *chessboard, const int color, std::deque<MoveInfo> &Result, int* num_eats);
-	double Evaluate(const ChessBoard *chessboard, const std::deque<MoveInfo> &Moves, const int color);
+	double Evaluate(const ChessBoard *chessboard, const std::deque<MoveInfo> &Moves, const int color, const int depth);
 	double Simulate(ChessBoard chessboard, const int color, const int max_depth);
 	bool isDraw(const ChessBoard* chessboard);
 	bool isFinish(const ChessBoard *chessboard, const std::deque<MoveInfo> &Moves, const int eatNum, const int color, const int remain_depth);

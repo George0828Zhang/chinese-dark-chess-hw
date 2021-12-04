@@ -21,7 +21,8 @@
 #define assert(x) ((void)0)
 #endif
 
-#define TIME_LIMIT 9.5
+// #define TIME_LIMIT 9.5
+#define TIME_LIMIT 5.0
 
 #define WIN 1.0
 #define DRAW 0.2*WIN
@@ -285,7 +286,7 @@ void MyAI::generateMove(char move[6])
 		std::deque<MoveInfo> Moves;
 		Expand(&root_chessboard, tcolor, Moves, nullptr);
 		if (Moves.size() == 0){
-			if(Evaluate(&root_chessboard, Moves, tcolor) >= WIN){
+			if(Evaluate(&root_chessboard, Moves, tcolor, tree.depth[par]) >= WIN){
 				// Win -> do nothing, the loop will break.
 			}
 			else{
@@ -813,7 +814,7 @@ double evalColor(const ChessBoard *chessboard, const std::deque<MoveInfo> &Moves
 
 // always use my point of view, so use this->Color
 double MyAI::Evaluate(const ChessBoard *chessboard,
-					  const std::deque<MoveInfo> &Moves, const int color)
+					  const std::deque<MoveInfo> &Moves, const int color, const int depth)
 {
 	// score = My Score - Opponent's Score
 	// offset = <WIN + BONUS> to let score always not less than zero
@@ -896,7 +897,13 @@ double MyAI::Evaluate(const ChessBoard *chessboard,
 		// linear map to [-<BONUS>, <BONUS>]
 		// score max value = 1*5 + 180*2 + 6*2 + 18*2 + 90*2 + 270*2 + 810*1 = 1943
 		// <ORIGINAL_SCORE> / <ORIGINAL_SCORE_MAX_VALUE> * <BONUS>
-		piece_value = piece_value / 1.0 * BONUS;
+		double max_value = 1.0; 
+		const double max_depth_bonus = BONUS;
+		double depth_bonus = BONUS*std::pow(0.99, std::max(0, depth - 1));
+		piece_value += depth_bonus;
+		max_value += max_depth_bonus;
+
+		piece_value = piece_value / max_value * BONUS;
 		assert(piece_value <= BONUS && piece_value >= -BONUS);
 		score += piece_value; 
 	}
@@ -919,7 +926,7 @@ double MyAI::Simulate(ChessBoard chessboard, const int color, const int max_dept
 
 		// Check if is finish
 		if(isFinish(&chessboard, Moves, eatNum, turn_color, remain_depth)){
-			return Evaluate(&chessboard, Moves, turn_color);
+			return Evaluate(&chessboard, Moves, turn_color, max_depth - remain_depth);
 		}
 
 		// distinguish eat-move and pure-move
