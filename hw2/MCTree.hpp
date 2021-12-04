@@ -54,17 +54,36 @@ public:
         Variance.push_back(0);
 		return id;
 	}
-	void update(int i, double sum1, double sum2, int trials){
+	void update_stats(int i, double sum1, double sum2, int trials){
+		sum_scores[i] += sum1;
+		sum_squares[i] += sum2;
+		n_trials[i] += trials;
+	}
+	void update_computation(int i){
+		// speedup
+		CsqrtlogN[i] = _c*std::sqrt(std::log((double)n_trials[i]));
+		sqrtN[i] = std::sqrt((double)n_trials[i]);
+		Average[i] = sum_scores[i] / n_trials[i];
+		Variance[i] = sum_squares[i] / n_trials[i] - Average[i] * Average[i];
+	}
+	void update_leaf(int i, double sum1, double sum2, int trials){
+		update_stats(i, sum1, sum2, trials);
+		update_computation(i);
+	}
+	void propogate(int i){
+		double sum1 = 0;
+		double sum2 = 0;
+		int trials = 0;
+		for(auto& ch: children_ids[i]){
+			sum1 += sum_scores[ch];
+			sum2 += sum_squares[ch];
+			trials += n_trials[ch];
+		}
 		while(i != -1){
-			sum_scores[i] += sum1;
-            sum_squares[i] += sum2;
-			n_trials[i] += trials;
+			update_stats(i, sum1, sum2, trials);
 
             // speedup
-            CsqrtlogN[i] = _c*std::sqrt(std::log((double)n_trials[i]));
-            sqrtN[i] = std::sqrt((double)n_trials[i]);
-            Average[i] = sum_scores[i] / n_trials[i];
-            Variance[i] = sum_squares[i] / n_trials[i] - Average[i] * Average[i];
+            update_computation(i);
 
 			i = parent_id[i];
 		}
@@ -78,10 +97,11 @@ public:
 			int best_ch = 0;
 			double best_score = -DBL_MAX;
 			for(auto& ch: children_ids[par]){
+				if (dead[ch]) continue;
 				double explore = CsqrtlogN[par] / sqrtN[ch];
 				double stdv = std::sqrt(std::min(Variance[ch] + explore, _c2));
 				double cur_score = co*Average[ch] + explore * stdv;
-				if(!dead[ch] && cur_score > best_score){
+				if(cur_score > best_score){
 					best_ch = ch;
 					best_score = cur_score;
 				}

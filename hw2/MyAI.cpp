@@ -15,7 +15,7 @@
 #include <cmath>
 #include <cassert>
 
-// #define NOASSERT
+#define NOASSERT
 #ifdef NOASSERT
 #undef assert
 #define assert(x) ((void)0)
@@ -270,8 +270,9 @@ void MyAI::generateMove(char move[6])
 	gettimeofday(&begin, 0);
 #endif
 
-	int num_chess = this->main_chessboard.Red_Chess_Num + this->main_chessboard.Black_Chess_Num;
-	MCTree tree(num_chess < 16 ? 0.88 : 1.18, 1.0);
+	// int num_chess = this->main_chessboard.Red_Chess_Num + this->main_chessboard.Black_Chess_Num;
+	// MCTree tree(num_chess < 16 ? 0.88 : 1.18, 1.0);
+	MCTree tree(0.23, 1.0);
 	int par = tree.expand(-1, -1); // depth = 0, current board.
 	assert(par == 0);
 	assert(tree.parent_id[0] == -1);
@@ -306,8 +307,9 @@ void MyAI::generateMove(char move[6])
 				total_score += sc;
 				total_square += sc*sc;
 			}
-			tree.update(id, total_score, total_square, SIMULATE_COUNT_PER_CHILD);
+			tree.update_leaf(id, total_score, total_square, SIMULATE_COUNT_PER_CHILD);
 		}
+		tree.propogate(par);
 		prev_par = par;
 		par = tree.pv_leaf(0);
 	}
@@ -479,27 +481,34 @@ void moveInBoard(ChessBoard *chessboard, const int src, const int dst){
 }
 
 bool cantWinCheck(const ChessBoard *chessboard, const int color){
+	/*
+	P C N R M G K
+	0 1 2 3 4 5 6
+	*/
 	if (chessboard->cantWin[color])
 		return true; // cant once, cant forever
-	if (chessboard->AliveChess[color * 7 + 1] > 0)
-		return false; // i have cannon might win
+	int my_num = color == RED ? chessboard->Red_Chess_Num : chessboard->Black_Chess_Num;
+	// int op_num = color == RED ? chessboard->Black_Chess_Num : chessboard->Red_Chess_Num;
 	int op_color = color^1;
-	if ((op_color == RED && chessboard->Red_Chess_Num == 0) &&
-		(op_color == BLACK && chessboard->Black_Chess_Num == 0))
-		return false; // opponent loses i win
-	int offset = color * 7;
-	int myCumsumAlive[7], cumsum = 0;
+	// single cannon
+	if (chessboard->AliveChess[color * 7 + 1] > 0 && my_num < 2)
+		return true;
+	
+	/* Domination:
+		For each type, if number of pieces that can capture it
+		is less than the number of pieces of that type, we loses
+	*/
+	std::vector<int> myGreater(8, 0);
+	myGreater[7] = chessboard->AliveChess[color * 7 + 1]; // cannon
 	for (int i = 6; i >= 0; i--)
 	{
-		cumsum += chessboard->AliveChess[offset + i];
-		myCumsumAlive[i] = cumsum;
+		myGreater[i] = myGreater[i+1] + chessboard->AliveChess[color * 7 + i];
 	}
-	myCumsumAlive[0] -= chessboard->AliveChess[offset + 6];
-	myCumsumAlive[6] += chessboard->AliveChess[offset + 0];
+	myGreater[0] -= chessboard->AliveChess[color * 7 + 6]; // king can't eat pawn
+	myGreater[6] += chessboard->AliveChess[color * 7 + 0]; // pawn can eat king
 
-	offset = op_color * 7;
 	for(int i = 0; i < 7; i++){
-		if (chessboard->AliveChess[offset + i] > 0 && myCumsumAlive[i] < 1){
+		if (myGreater[i] < chessboard->AliveChess[op_color * 7 + i]){
 			return true;
 		}
 	}
