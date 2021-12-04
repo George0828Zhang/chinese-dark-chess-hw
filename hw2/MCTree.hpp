@@ -25,8 +25,17 @@ public:
 	std::vector<double> Average;
 	std::vector<double> Variance;
 
+	// propogation
+	double buffer_scores;
+	double buffer_squares;
+	double buffer_trials;
+
 	MCTree(double exploration, double max_var):
-    _c(exploration),_c2(max_var),max_depth(0),histories(),sum_scores(),sum_squares(),n_trials(),parent_id(),depth(),dead(),children_ids(),CsqrtlogN(),sqrtN(),Average(),Variance() {};
+    _c(exploration),_c2(max_var),max_depth(0),histories()
+	,sum_scores(),sum_squares(),n_trials()
+	,parent_id(),depth(),dead(),children_ids()
+	,CsqrtlogN(),sqrtN(),Average(),Variance()
+	,buffer_scores(0),buffer_squares(0),buffer_trials(0) {};
 
 	int expand(int parent, int new_move){
 		int id = histories.size();
@@ -66,19 +75,29 @@ public:
 		Average[i] = sum_scores[i] / n_trials[i];
 		Variance[i] = sum_squares[i] / n_trials[i] - Average[i] * Average[i];
 	}
+	void update_stats_buff(double sum1, double sum2, int trials){
+		buffer_scores += sum1;
+		buffer_squares += sum2;
+		buffer_trials += trials;
+	}
+	void clear_stats_buff(){
+		buffer_scores = 0;
+		buffer_squares = 0;
+		buffer_trials = 0;
+	}
 	void update_leaf(int i, double sum1, double sum2, int trials){
 		update_stats(i, sum1, sum2, trials);
 		update_computation(i);
+		if(parent_id[i] != -1)
+			update_stats_buff(sum1, sum2, trials);
 	}
 	void propogate(int i){
-		double sum1 = 0;
-		double sum2 = 0;
-		int trials = 0;
-		for(auto& ch: children_ids[i]){
-			sum1 += sum_scores[ch];
-			sum2 += sum_squares[ch];
-			trials += n_trials[ch];
-		}
+		// pop buffer
+		double sum1 = buffer_scores;
+		double sum2 = buffer_squares;
+		int trials = buffer_trials;
+		clear_stats_buff();
+		if (trials == 0) return;
 		while(i != -1){
 			update_stats(i, sum1, sum2, trials);
 

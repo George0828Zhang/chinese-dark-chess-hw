@@ -272,14 +272,14 @@ void MyAI::generateMove(char move[6])
 
 	// int num_chess = this->main_chessboard.Red_Chess_Num + this->main_chessboard.Black_Chess_Num;
 	// MCTree tree(num_chess < 16 ? 0.88 : 1.18, 1.0);
-	MCTree tree(0.23, 1.0);
+	MCTree tree(1.18, 1.0); // 0.23, 0.18
 	int par = tree.expand(-1, -1); // depth = 0, current board.
 	assert(par == 0);
 	assert(tree.parent_id[0] == -1);
 	assert(tree.depth[0] == 0);
 
 	int prev_par = -1;
-	while(!isTimeUp() && par != prev_par){
+	while(!isTimeUp() && par != -1){
 		int tcolor = this->Color ^ (tree.depth[par] % 2);		// depth even: my color
 		ChessBoard root_chessboard = this->main_chessboard;		// copy
 		fastForward(&root_chessboard, tree.histories[par]);
@@ -287,17 +287,26 @@ void MyAI::generateMove(char move[6])
 		std::deque<MoveInfo> Moves;
 		Expand(&root_chessboard, tcolor, Moves, nullptr);
 		if (Moves.size() == 0){
-			if(Evaluate(&root_chessboard, Moves, tcolor, tree.depth[par]) >= WIN){
-				// Win -> do nothing, the loop will break.
-			}
-			else{
-				tree.mark_dead(par);
+			// tcolor loses! go back 2 layers
+			prev_par = par;
+			par = tree.parent_id[par];
+			if (par != -1) par = tree.parent_id[par];
+			continue;
+		}
+		else if (tree.children_ids[par].size() == 0){
+			// Expand
+			for(auto& m: Moves){
+				tree.expand(par, m.num());
 			}
 		}
-		for(auto& m: Moves){
-			int id = tree.expand(par, m.num());
+
+		// clear propogation buffer
+		tree.clear_stats_buff();
+		for(auto& id: tree.children_ids[par]){
+			assert(!tree.histories[id].empty());
+			int move = tree.histories[id].back();
 			ChessBoard new_chessboard = root_chessboard;		// copy
-			MakeMove(&new_chessboard, m.num(), 0);				// already made move, so next in simulate must be opponent.
+			MakeMove(&new_chessboard, move, 0);				// already made move, so next in simulate must be opponent.
 			
 			// run simulation
 			double total_score = 0;
@@ -310,8 +319,16 @@ void MyAI::generateMove(char move[6])
 			tree.update_leaf(id, total_score, total_square, SIMULATE_COUNT_PER_CHILD);
 		}
 		tree.propogate(par);
+
 		prev_par = par;
 		par = tree.pv_leaf(0);
+		if (par == prev_par && tree.n_trials[0] > 100000){
+			fprintf(stderr, "[DEBUG] early stop depth: %d, score: %5lf, var: %5lf, trials: %d (%s)\n",
+				tree.depth[par], tree.Average[par], tree.Variance[par], tree.n_trials[par],
+				tcolor==this->Color ? "Lose" : "Win"
+			);
+			break;
+		}
 	}
 
 	std::deque<MoveInfo> Moves;
@@ -353,18 +370,22 @@ void MyAI::generateMove(char move[6])
 			i+1, tmp, Children_Scores[i], Children_Vars[i], Children_Trials[i]);
 		fflush(stderr);
 	}
+	char msg[256];
+	sprintf(msg, "MCTS: %lf (total simulations: %d, tree depth: %d%s)\n", Children_Scores[best_child_id], sim_count, max_depth, early_stop ? ", early stopped" : "");
+	fprintf(stderr, "%s", msg);
 
 	// set return value
 	int StartPoint = Moves[best_child_id].from_location_no;
 	int EndPoint = Moves[best_child_id].to_location_no;
 	sprintf(move, "%c%c-%c%c",'a'+(StartPoint%4),'1'+(7-StartPoint/4),'a'+(EndPoint%4),'1'+(7-EndPoint/4));
 	
+	
 	char chess_Start[4]="";
 	char chess_End[4]="";
 	Pirnf_Chess(main_chessboard.Board[StartPoint], chess_Start);
 	Pirnf_Chess(main_chessboard.Board[EndPoint], chess_End);
 	printf("My result: \n--------------------------\n");
-	printf("MCTS: %lf (total simulations: %d, tree depth: %d%s)\n", Children_Scores[best_child_id], sim_count, max_depth, early_stop ? ", early stopped" : "");
+	printf("%s", msg);
 	printf("(%d) -> (%d)\n",StartPoint,EndPoint);
 	printf("<%s> -> <%s>\n",chess_Start,chess_End);
 	printf("move:%s\n",move);
@@ -907,8 +928,8 @@ double MyAI::Evaluate(const ChessBoard *chessboard,
 		// score max value = 1*5 + 180*2 + 6*2 + 18*2 + 90*2 + 270*2 + 810*1 = 1943
 		// <ORIGINAL_SCORE> / <ORIGINAL_SCORE_MAX_VALUE> * <BONUS>
 		double max_value = 1.0; 
-		const double max_depth_bonus = BONUS;
-		double depth_bonus = BONUS*std::pow(0.99, std::max(0, depth - 1));
+		const double max_depth_bonus = 0.3; // 0.3 works
+		double depth_bonus = std::pow(0.99, std::max(0, depth/2))*max_depth_bonus;
 		piece_value += depth_bonus;
 		max_value += max_depth_bonus;
 

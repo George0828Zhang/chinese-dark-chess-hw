@@ -30,8 +30,9 @@ MAIN_FILE := $(MAIN).cpp
 MAIN_OBJ := $(OBJ_FOLDER)/$(MAIN).o
 
 AI := MyAI
+TREE := MCTree
 AI_FILE := $(AI).cpp
-AI_HEADER := $(AI).h
+AI_HEADER := $(AI).h $(TREE).hpp
 AI_OBJ := $(OBJ_FOLDER)/$(AI).o
 
 PRNG := pcg_basic
