@@ -12,6 +12,7 @@ class MCTree{
 	double _c;
 	double _c2;
 public:
+	int n_cut;
 	int max_depth;
 	std::vector<std::vector<MoveInfo>> histories;
 	std::vector<double> sum_scores;
@@ -48,7 +49,7 @@ public:
 	}
 
 	MCTree(double exploration, double max_var):
-    _c(exploration),_c2(max_var),max_depth(0),histories()
+    _c(exploration),_c2(max_var),n_cut(0),max_depth(0),histories()
 	,sum_scores(),sum_squares(),n_trials()
 	,sum_scores_amaf(),sum_squares_amaf(),n_trials_amaf()
 	,parent_id(),depth(),dead(),children_ids()
@@ -188,8 +189,12 @@ public:
 	void mark_dead(int i){
 		dead[i] = true;
 	}
-	int pv_leaf(int par){
-		while(!children_ids[par].empty()){	
+	int pv_leaf(int par, bool do_prune){
+		while(!children_ids[par].empty()){
+			if(do_prune &&
+			(n_trials[par]/100 > (int)children_ids[par].size()))
+				prune_child(par);
+
 			double co = (depth[par]&1 ? -1 : 1); // Minimax
 			int best_ch = 0;
 			double best_score = -DBL_MAX;
@@ -206,6 +211,32 @@ public:
 			par = best_ch;
 		}
 		return par;
+	}
+	void prune_child(int par){
+		if(par < 0 || children_ids[par].size() < 2) return;
+		double co = (depth[par]&1 ? -1 : 1); // Minimax
+		const double r_d = 1;
+		const double sig_e = 0.2;
+
+		// find highest lower bound
+		double bound = -DBL_MAX;
+		for(auto& ch: children_ids[par]){
+			if(dead[ch]) continue;
+			if (Variance[ch] < sig_e)
+				bound = std::max(co*Average[ch] - r_d*Variance[ch], bound);
+		}
+		if (bound == -DBL_MAX) return;
+		// prune inferior
+		std::vector<int> alive;
+		for(auto& ch: children_ids[par]){
+			if(dead[ch]) continue;
+			if (Variance[ch] < sig_e && (co*Average[ch] + r_d*Variance[ch]) <= bound){
+				mark_dead(ch);
+				n_cut++;
+			}
+			else alive.push_back(ch); // actually prune dead children to speed up
+		}
+		children_ids[par] = alive; // actually prune dead children to speed up
 	}
 };
 

@@ -15,11 +15,13 @@
 #include <cmath>
 #include <cassert>
 
-// #define NOASSERT
+#define NOASSERT
 #ifdef NOASSERT
 #undef assert
 #define assert(x) ((void)0)
 #endif
+
+// #define PRUNE
 
 // #define TIME_LIMIT 9.5
 #define TIME_LIMIT 5.0
@@ -279,6 +281,8 @@ void MyAI::generateMove(char move[6])
 	assert(tree.depth[0] == 0);
 
 	int prev_par = -1;
+	int prune_progress = 0;
+	const int prune_period = 10000;
 	while(!isTimeUp() && par != -1){
 		int tcolor = this->Color ^ (tree.depth[par] % 2);		// depth even: my color
 		ChessBoard root_chessboard = this->main_chessboard;		// copy
@@ -293,9 +297,17 @@ void MyAI::generateMove(char move[6])
 			if (par != -1) par = tree.parent_id[par];
 			continue;
 		}
-		else if (tree.children_ids[par].size() == 0){
+		else if (tree.children_ids[par].size() < Moves.size()){
+			std::array<bool, 3132> exists;
+			exists.fill(false);
+			for(auto& ch: tree.children_ids[par]){
+				int move = tree.histories[ch].back().num();
+				exists[move] = true;
+			}
 			// Expand
 			for(auto& m: Moves){
+				if (exists[m.num()]) continue;
+				// TODO: node expansion policy
 				tree.expand(par, m);
 			}
 		}
@@ -320,8 +332,15 @@ void MyAI::generateMove(char move[6])
 		}
 		tree.propagate(par);
 
+		bool do_prune = false;
+#ifdef PRUNE
+		if (tree.n_trials[0] > prune_progress + prune_period){
+			do_prune = true;
+			prune_progress += prune_period;
+		}
+#endif
 		prev_par = par;
-		par = tree.pv_leaf(0);
+		par = tree.pv_leaf(0, do_prune);
 		if (par == prev_par && tree.n_trials[0] > 100000){
 			fprintf(stderr, "[DEBUG] early stop depth: %d, score: %5lf, var: %5lf, trials: %d (%s)\n",
 				tree.depth[par], tree.Average[par], tree.Variance[par], tree.n_trials[par],
@@ -334,7 +353,7 @@ void MyAI::generateMove(char move[6])
 	int max_depth = tree.max_depth;
 	int sim_count = tree.n_trials[0];
 	int amaf_count = tree.n_trials_amaf[0];
-	int n_pruned = 0; //tree.n_pruned;
+	int n_cut = tree.n_cut;
 	bool early_stop = par == -1 || prev_par == par;
 
 	double best_score = -DBL_MAX;
@@ -377,7 +396,7 @@ void MyAI::generateMove(char move[6])
 	}
 
 	char msg[200];
-	sprintf(msg, "%lf (total simulations: %d, rave: %d, tree depth: %d, cut: %d%s)", best_score, sim_count, sim_count+amaf_count, max_depth, n_pruned, early_stop ? ", early stopped" : "");
+	sprintf(msg, "%lf (total simulations: %d, rave: %d, tree depth: %d, cut: %d%s)", best_score, sim_count, sim_count+amaf_count, max_depth, n_cut, early_stop ? ", early stopped" : "");
 	fprintf(stderr, "Best: %s\n", msg); 
 	fflush(stderr);
 
