@@ -6,8 +6,10 @@
 #include <cmath>
 // #include <cassert>
 #include "MyAI.h"
+
+#define VARIANCE
 #define RAVE
-// #define SILVER
+// #define SILVER 0.01
 
 class MCTree{
 	double _c;
@@ -106,7 +108,7 @@ public:
 		// assert(n_trials[i] > 0);
 		double trials_amaf = n_trials[i] + n_trials_amaf[i];
 #ifdef SILVER
-		const double _b2 = 0.03*0.03;
+		const double _b2 = SILVER*SILVER;
 		double beta = 1.0 / ((n_trials[i] / trials_amaf) + 1 + 4*_b2*n_trials[i]);
 		double alpha = 1 - beta;
 #else
@@ -210,7 +212,11 @@ public:
 			for(auto& ch: children_ids[par]){
 				if (dead[ch]) continue;
 				double explore = CsqrtlogN[par] / sqrtN[ch];
+#ifdef VARIANCE
 				double stdv = std::sqrt(std::min(Variance[ch] + explore, _c2));
+#else
+				double stdv = 1;
+#endif
 				double cur_score = co*Average[ch] + explore * stdv;
 				if(cur_score > best_score){
 					best_ch = ch;
