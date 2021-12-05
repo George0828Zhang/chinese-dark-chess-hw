@@ -4,9 +4,10 @@
 #include <vector>
 #include <cfloat>
 #include <cmath>
-#include <cassert>
+// #include <cassert>
 #include "MyAI.h"
 #define RAVE
+// #define SILVER
 
 class MCTree{
 	double _c;
@@ -26,6 +27,7 @@ public:
 	std::vector<int> parent_id;
 	std::vector<int> depth;
 	std::vector<bool> dead;
+	std::vector<bool> mature;
 	std::vector<std::vector<int>> children_ids;
 
     // speedup
@@ -44,6 +46,9 @@ public:
 	std::array<double, 15*32*32> tab_squares;
 	std::array<int, 15*32*32> tab_trials;
 
+	// depth-i
+	std::deque<int> depth_i_queue;
+
 	static inline int mvhash(const MoveInfo& mv){
 		return (mv.from_chess_no + 1)*1024 + mv.from_location_no*32 + mv.to_location_no;
 	}
@@ -52,9 +57,10 @@ public:
     _c(exploration),_c2(max_var),n_cut(0),max_depth(0),histories()
 	,sum_scores(),sum_squares(),n_trials()
 	,sum_scores_amaf(),sum_squares_amaf(),n_trials_amaf()
-	,parent_id(),depth(),dead(),children_ids()
+	,parent_id(),depth(),dead(),mature(),children_ids()
 	,CsqrtlogN(),sqrtN(),Average(),Variance()
-	,buffer_scores(0),buffer_squares(0),buffer_trials(0) {};
+	,buffer_scores(0),buffer_squares(0),buffer_trials(0)
+	,depth_i_queue() {};
 
 	int expand(int parent, const MoveInfo& new_move){
 		int id = histories.size();
@@ -73,6 +79,7 @@ public:
 		parent_id.push_back(parent);
 		depth.push_back(parent == -1 ? 0 : (depth[parent]+1));
 		dead.push_back(false);
+		mature.push_back(false);
 		children_ids.push_back(std::vector<int>());
 		if (parent != -1)
 			children_ids[parent].push_back(id);
@@ -96,24 +103,25 @@ public:
 		n_trials_amaf[i] += trials;
 	}
 	void update_computation(int i){
-		assert(n_trials[i] > 0);
+		// assert(n_trials[i] > 0);
 		double trials_amaf = n_trials[i] + n_trials_amaf[i];
+#ifdef SILVER
+		const double _b2 = 0.03*0.03;
+		double beta = 1.0 / ((n_trials[i] / trials_amaf) + 1 + 4*_b2*n_trials[i]);
+		double alpha = 1 - beta;
+#else
 		double alpha = std::min(1.0, (double)n_trials[i] / 10000.0);
-		// Silver
-		// const double _b2 = 0.03*0.03;
-		// double beta = 1.0 / ((n_trials[i] / trials_amaf) + 1 + 4*_b2*n_trials[i]);
-		// double alpha = 1 - beta;
-
+#endif
 		// speedup
 		CsqrtlogN[i] = _c*std::sqrt(std::log(trials_amaf));
 		sqrtN[i] = std::sqrt(trials_amaf);
 
 		double avg_real = sum_scores[i] / n_trials[i];
 		double var_real = sum_squares[i] / n_trials[i] - avg_real * avg_real + 1e-7;
-		assert(var_real >= 0);
+		// assert(var_real >= 0);
 		double avg_amaf = (sum_scores[i] + sum_scores_amaf[i]) / trials_amaf;
 		double var_amaf = (sum_squares[i] + sum_squares_amaf[i]) / trials_amaf - avg_amaf * avg_amaf + 1e-7;
-		assert(var_amaf >= 0);
+		// assert(var_amaf >= 0);
 		Average[i] = alpha*avg_real + (1.0-alpha)*avg_amaf;
 		Variance[i] = alpha*alpha*var_real + (1.0-alpha)*(1.0-alpha)*var_amaf + 2*alpha*(1.0-alpha)*std::sqrt(var_real*var_amaf);
 	}
@@ -190,7 +198,8 @@ public:
 		dead[i] = true;
 	}
 	int pv_leaf(int par, bool do_prune){
-		while(!children_ids[par].empty()){
+		// while(!children_ids[par].empty()){
+		while(mature[par]){
 			if(do_prune &&
 			(n_trials[par]/100 > (int)children_ids[par].size()))
 				prune_child(par);
@@ -237,6 +246,33 @@ public:
 			else alive.push_back(ch); // actually prune dead children to speed up
 		}
 		children_ids[par] = alive; // actually prune dead children to speed up
+	}
+	void mark_mature(int i){
+		mature[i] = true;
+	}
+	void update_mature(int i, const std::deque<MoveInfo>& Moves, int MIN_SIM){		
+		if (mature[i]) return;
+		if (children_ids[i].size() < Moves.size()) return; // not mature
+		// make sure <MIN_SIM> are run on all childs before going deeper
+		for(auto& ch: children_ids[i]){
+			if(n_trials[ch] < MIN_SIM){
+				return; // not mature
+			}
+		}
+		mark_mature(i);
+	}
+	void depth_i_enque(int id){
+		if (mature[id]) return;
+		depth_i_queue.push_back(id);
+	}
+	bool depth_i_popque(int* next){
+		while (!depth_i_queue.empty() && mature[depth_i_queue.front()]){
+			// fprintf(stderr, "[DEBUG] node %d matured and popped.\n", depth_i_queue.front());
+			depth_i_queue.pop_front();
+		}
+		if (depth_i_queue.empty()) return false;
+		*next = depth_i_queue.front();
+		return true;
 	}
 };
 

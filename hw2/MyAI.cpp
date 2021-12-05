@@ -21,10 +21,8 @@
 #define assert(x) ((void)0)
 #endif
 
-// #define PRUNE
-
-// #define TIME_LIMIT 9.5
-#define TIME_LIMIT 5.0
+#define TIME_LIMIT 9.5
+// #define TIME_LIMIT 5.0
 
 #define WIN 1.0
 #define DRAW 0.2*WIN
@@ -38,6 +36,10 @@
 #define POSITION_REPETITION_LIMIT 3
 
 #define SIMULATE_COUNT_PER_CHILD 10
+
+// #define PRUNE
+#define DEPTH_I 1
+#define MIN_SIM 10
 
 MyAI::MyAI(void){
 	pcg32_srandom_r(&this->rng, time(NULL) ^ (intptr_t)&printf, 
@@ -308,11 +310,13 @@ void MyAI::generateMove(char move[6])
 			for(auto& m: Moves){
 				if (exists[m.num()]) continue;
 				// TODO: node expansion policy
-				tree.expand(par, m);
+				int id = tree.expand(par, m);
+				if (tree.depth[id] < DEPTH_I)
+					tree.depth_i_enque(id);
 			}
 		}
 
-		// clear propogation buffer
+		// clear propogation buffer before simulations
 		tree.clear_stats_buff_and_hash();
 		for(auto& id: tree.children_ids[par]){
 			assert(!tree.histories[id].empty());
@@ -332,6 +336,11 @@ void MyAI::generateMove(char move[6])
 		}
 		tree.propagate(par);
 
+		// make sure <MIN_SIM> are run on all childs before going deeper
+		if (!tree.mature[par])
+			tree.update_mature(par, Moves, MIN_SIM);
+
+		// do pruning
 		bool do_prune = false;
 #ifdef PRUNE
 		if (tree.n_trials[0] > prune_progress + prune_period){
@@ -340,14 +349,19 @@ void MyAI::generateMove(char move[6])
 		}
 #endif
 		prev_par = par;
-		par = tree.pv_leaf(0, do_prune);
-		if (par == prev_par && tree.n_trials[0] > 100000){
-			fprintf(stderr, "[DEBUG] early stop depth: %d, score: %5lf, var: %5lf, trials: %d (%s)\n",
-				tree.depth[par], tree.Average[par], tree.Variance[par], tree.n_trials[par],
-				tcolor==this->Color ? "Lose" : "Win"
-			);
-			break;
-		}
+
+		// try to get immature nodes less than depth_i, if fail then get pv_leaf
+		if (tree.depth_i_popque(&par) == false)
+			par = tree.pv_leaf(0, do_prune);
+
+		// if (par == prev_par && tree.n_trials[0] > 100000){
+		// 	fprintf(stderr, "[DEBUG] early stop depth: %d, score: %5lf, var: %5lf, trials: %d (%s)\n",
+		// 		tree.depth[par], tree.Average[par], tree.Variance[par], tree.n_trials[par],
+		// 		tcolor==this->Color ? "Lose" : "Win"
+		// 	);
+		// 	break;
+		// } // this almost never happens anyway
+
 	}
 
 	int max_depth = tree.max_depth;
@@ -397,7 +411,7 @@ void MyAI::generateMove(char move[6])
 
 	char msg[200];
 	sprintf(msg, "%lf (total simulations: %d, rave: %d, tree depth: %d, cut: %d%s)", best_score, sim_count, sim_count+amaf_count, max_depth, n_cut, early_stop ? ", early stopped" : "");
-	fprintf(stderr, "Best: %s\n", msg); 
+	fprintf(stderr, "Best: %s %s\n", msg, this->main_chessboard.cantWin[this->Color] ? "(Can't win)" : ""); 
 	fflush(stderr);
 
 	assert(StartPoint >= 0);
@@ -898,10 +912,12 @@ double MyAI::Evaluate(const ChessBoard *chessboard,
 	{ // Draw
 		// score = DRAW - DRAW;
 		finish = false;
-		if (!cantWinCheck(chessboard, this->Color))
-			score += LOSE - WIN;
-		else
+		if (this->main_chessboard.cantWin[this->Color]){
+			score += WIN - LOSE;
 			finish = true;
+		}
+		else
+			score += LOSE - WIN;
 	}
 	else
 	{ // no conclusion
