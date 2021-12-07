@@ -318,6 +318,7 @@ void MyAI::generateMove(char move[6])
 
 		// clear propogation buffer before simulations
 		tree.clear_stats_buff_and_hash();
+		bool timeup = false;
 		for(auto& id: tree.children_ids[par]){
 			assert(!tree.histories[id].empty());
 			int move = tree.histories[id].back().num();
@@ -327,13 +328,16 @@ void MyAI::generateMove(char move[6])
 			// run simulation
 			double total_score = 0;
 			double total_square = 0;
-			for(int k = 0; k < SIMULATE_COUNT_PER_CHILD; ++k){
+			for(int k = 0; !timeup && k < SIMULATE_COUNT_PER_CHILD; ++k){
 				double sc = Simulate(new_chessboard, tcolor, 60);
 				total_score += sc;
 				total_square += sc*sc;
+				if(isTimeUp()) timeup = true;
 			}
+			if (timeup) break;
 			tree.update_leaf(id, total_score, total_square, SIMULATE_COUNT_PER_CHILD);
 		}
+		if (timeup) break;
 		tree.propagate(par);
 
 		// make sure <MIN_SIM> are run on all childs before going deeper
