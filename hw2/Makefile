@@ -1,5 +1,6 @@
 # object file folder
 OBJ_FOLDER := bin
+SRC_FOLDER := src
 
 # check OS
 ifeq ($(OS), Windows_NT) # windows
@@ -26,18 +27,18 @@ all : hw2
 
 # specify files
 MAIN := main
-MAIN_FILE := $(MAIN).cpp
+MAIN_FILE := $(SRC_FOLDER)/$(MAIN).cpp
 MAIN_OBJ := $(OBJ_FOLDER)/$(MAIN).o
 
 AI := MyAI
 TREE := MCTree
-AI_FILE := $(AI).cpp
-AI_HEADER := $(AI).h $(TREE).hpp
+AI_FILE := $(SRC_FOLDER)/$(AI).cpp
+AI_HEADER := $(SRC_FOLDER)/$(AI).h $(SRC_FOLDER)/$(TREE).hpp
 AI_OBJ := $(OBJ_FOLDER)/$(AI).o
 
 PRNG := pcg_basic
-PRNG_FILE := $(PRNG).c
-PRNG_HEADER := $(PRNG).h
+PRNG_FILE := $(SRC_FOLDER)/$(PRNG).c
+PRNG_HEADER := $(SRC_FOLDER)/$(PRNG).h
 PRNG_OBJ := $(OBJ_FOLDER)/$(PRNG).o
 
 # command
