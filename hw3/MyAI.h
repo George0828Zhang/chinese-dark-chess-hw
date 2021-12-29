@@ -32,25 +32,17 @@ public:
 	vector<int> History;
 };
 
-// struct ChessBoard{
-// 	int Board[32];
-// 	int CoverChess[14];
-// 	int Red_Chess_Num, Black_Chess_Num;
-// 	int NoEatFlip;
-// 	int History[4096];
-// 	int HistoryCount;
-
-// 	ChessBoard(){}
-// 	ChessBoard(const ChessBoard &chessBoard){
-// 		memcpy(this->Board, chessBoard.Board, 32*sizeof(int));
-// 		memcpy(this->CoverChess, chessBoard.CoverChess, 14*sizeof(int));
-// 		this->Red_Chess_Num = chessBoard.Red_Chess_Num;
-// 		this->Black_Chess_Num = chessBoard.Black_Chess_Num;
-// 		this->NoEatFlip = chessBoard.NoEatFlip;
-// 		memcpy(this->History, chessBoard.History, chessBoard.HistoryCount*sizeof(int));
-// 		this->HistoryCount = chessBoard.HistoryCount;
-// 	}
-// };
+class MoveInfo{
+public:
+	int from_chess_no;
+	int to_chess_no;
+	int from_location_no;
+	int to_location_no;
+	int priority;
+	int num;
+	MoveInfo(const array<int, 32>& board, int from, int to);
+	friend bool operator > (const MoveInfo& l, const MoveInfo& r);
+};
 
 class MyAI  
 {
@@ -126,8 +118,10 @@ private:
 	void MakeMove(ChessBoard* chessboard, const int move, const int chess);
 	void MakeMove(ChessBoard* chessboard, const char move[6]);
 	bool Referee(const array<int, 32>& board, const int Startoint, const int EndPoint, const int color);
-	int Expand(const ChessBoard *chessboard, const int color, int *Result);
+	// int Expand(const ChessBoard *chessboard, const int color, int *Result);
+	void Expand(const ChessBoard *chessboard, const int color, vector<MoveInfo> &Result);
 	double Evaluate(const ChessBoard* chessboard, const int legal_move_count, const int color);
+	// double Evaluate(const ChessBoard *chessboard, const std::vector<MoveInfo> &Moves, const int color);
 	double Nega_scout(const ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth, const double alpha, const double beta);
 	double Star0_EQU(const ChessBoard& chessboard, int move, const int* Chess, const int remain_count, const int remain_total, const int color, const int depth, const int remain_depth);
 	bool isDraw(const ChessBoard* chessboard);

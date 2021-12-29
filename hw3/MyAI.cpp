@@ -154,6 +154,59 @@ bool MyAI::init_board(const char* data[], char* response){
 }
 
 
+// *********************** MOVEINFO *********************** //
+
+#define PRIORITY_FLIP 0
+#define PRIORITY_MOVE 1
+#define PRIORITY_EAT 100
+
+MoveInfo::MoveInfo(const array<int, 32>& board, int from, int to){
+	from_location_no = from;
+	to_location_no = to;
+	from_chess_no = board[from];
+	to_chess_no = board[to];
+	num = from_location_no * 100 + to_location_no;
+	
+	// calculate priority
+	if (from == to){
+		priority = PRIORITY_FLIP;
+	}
+	else if (to_chess_no >= 0){
+		int from_id = (from_chess_no % 7)+1; // both 1-7
+		int to_id = (to_chess_no % 7)+1;
+		priority = (to_id*10 + (8-from_id)) * PRIORITY_EAT;
+	}
+	else{
+		int from_id = (from_chess_no % 7)+1;
+		int noise = 0;
+		priority = (from_id*10 + noise) * PRIORITY_MOVE;
+	}
+}
+bool operator > (const MoveInfo& c1, const MoveInfo& c2){
+    return c1.priority > c2.priority;
+}
+void moveOrdering(vector<MoveInfo>& Moves){
+	/* make priority high appear sooner 
+	Option1: we build a max heap O(N)
+	Option2: we use insertion sort which is fast for N < 32
+	*/
+	int N = Moves.size();
+	// build max heap
+	for(int j = N / 2 - 1; j >= 0; j--){
+		// max heapify
+		int p = j;
+		while((2 * p + 1) < N){
+			int chd = 2 * p + 1;
+			if(chd + 1 < N && Moves[chd + 1] > Moves[chd])
+				chd = chd + 1;
+			if(Moves[chd] > Moves[p]){
+				swap(Moves[chd], Moves[p]);
+				p = chd;
+			}else break;
+		}
+	}
+}
+
 // *********************** AI FUNCTION *********************** //
 
 int MyAI::GetFin(char c)
@@ -236,6 +289,8 @@ void MyAI::initBoardState()
 		main_chessboard.Prev[i] = i - 1;
 		main_chessboard.Next[i] = i == 31 ? -1 : (i + 1);
 	}
+
+	main_chessboard.History.reserve(1024);
 
 	Pirnf_Chessboard();
 }
@@ -436,13 +491,12 @@ void MyAI::MakeMove(ChessBoard* chessboard, const char move[6])
 	Pirnf_Chessboard();
 }
 
-int MyAI::Expand(const ChessBoard *chessboard, const int color,int *Result)
+void MyAI::Expand(const ChessBoard *chessboard, const int color, vector<MoveInfo> &Result)
 {
-	if (color == 2) return 0;// initial board
+	if (color == 2) return;// initial board
 	int n_chess = chessboard->Chess_Nums[color];
 	const array<int, 32>& board = chessboard->Board;
 
-	int ResultCount = 0;
 	for (int i = chessboard->Heads[color]; i != -1; i = chessboard->Next[i]){
 		n_chess--;
 		// Cannon
@@ -454,8 +508,7 @@ int MyAI::Expand(const ChessBoard *chessboard, const int color,int *Result)
 			{
 				if(Referee(board,i,rowCount,color))
 				{
-					Result[ResultCount] = i*100+rowCount;
-					ResultCount++;
+					Result.emplace_back(board, i, rowCount);
 				}
 			}
 			for(int colCount=col; colCount<32;colCount += 4)
@@ -463,8 +516,7 @@ int MyAI::Expand(const ChessBoard *chessboard, const int color,int *Result)
 			
 				if(Referee(board,i,colCount,color))
 				{
-					Result[ResultCount] = i*100+colCount;
-					ResultCount++;
+					Result.emplace_back(board, i, colCount);
 				}
 			}
 		}
@@ -476,8 +528,7 @@ int MyAI::Expand(const ChessBoard *chessboard, const int color,int *Result)
 				
 				if(Move[k] >= 0 && Move[k] < 32 && Referee(board,i,Move[k],color))
 				{
-					Result[ResultCount] = i*100+Move[k];
-					ResultCount++;
+					Result.emplace_back(board, i, Move[k]);
 				}
 			}
 		}
@@ -487,7 +538,6 @@ int MyAI::Expand(const ChessBoard *chessboard, const int color,int *Result)
 		n_chess -= chessboard->CoverChess[color*7 + i];
 	}
 	assert(n_chess == 0);
-	return ResultCount;
 }
 
 
@@ -696,11 +746,17 @@ double MyAI::Evaluate(const ChessBoard* chessboard,
 
 double MyAI::Nega_scout(const ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth, const double alpha, const double beta){
 
-	int Moves[2048], Chess[2048];
+	int Chess[2048];
 	int move_count = 0, flip_count = 0, remain_count = 0, remain_total = 0;
 
+	vector<MoveInfo> Moves;	
+	Moves.reserve(128);
+
 	// move
-	move_count = Expand(&chessboard, color, Moves);
+	Expand(&chessboard, color, Moves);
+	move_count = Moves.size();
+	moveOrdering(Moves);
+	
 	// flip
 	for(int j = 0; j < 14; j++){ // find remain chess
 		if(chessboard.CoverChess[j] > 0){
@@ -709,17 +765,11 @@ double MyAI::Nega_scout(const ChessBoard chessboard, int* move, const int color,
 			remain_total += chessboard.CoverChess[j];
 		}
 	}
-	// for(int i = 0; i < 32; i++){ // find cover
-	// 	if(chessboard.Board[i] == CHESS_COVER){
-	// 		Moves[move_count + flip_count] = i*100+i;
-	// 		flip_count++;
-	// 	}
-	// }
 	for (int i = chessboard.Heads[2]; i != -1; i = chessboard.Next[i]){
 		assert(chessboard.Board[i] == CHESS_COVER);
-		Moves[move_count + flip_count] = i*100+i;
-		flip_count++;
+		Moves.emplace_back(chessboard.Board, i, i);
 	}
+	flip_count = Moves.size() - move_count;
 
 	if(remain_depth <= 0 || // reach limit of depth
 		chessboard.Chess_Nums[RED] == 0 || // terminal node (no chess type)
@@ -737,16 +787,16 @@ double MyAI::Nega_scout(const ChessBoard chessboard, int* move, const int color,
 		for(int i = 0; i < move_count; i++){ // move
 			ChessBoard new_chessboard = chessboard;
 			
-			MakeMove(&new_chessboard, Moves[i], 0); // 0: dummy
+			MakeMove(&new_chessboard, Moves[i].num, 0); // 0: dummy
 			double t = -Nega_scout(new_chessboard, &new_move, color^1, depth+1, remain_depth-1, -n, -max(alpha, m));
 			if(t > m){ 
 				if (n == beta || remain_depth < 3 || t >= beta){
 					m = t;
-					*move = Moves[i];
+					*move = Moves[i].num;
 				}
 				else{
 					m = -Nega_scout(new_chessboard, &new_move, color^1, depth+1, remain_depth-1, -beta, -t);
-					*move = Moves[i];
+					*move = Moves[i].num;
 				}
 			}
 			if (m >= beta) return m; 
@@ -756,11 +806,11 @@ double MyAI::Nega_scout(const ChessBoard chessboard, int* move, const int color,
 		// chance nodes
 		for(int i = move_count; i < move_count + flip_count; i++){ // flip
 			// calculate the expect value of flip
-			double t = Star0_EQU(chessboard, Moves[i], Chess, remain_count, remain_total, color, depth, remain_depth); // , -beta, -max(alpha, m)
+			double t = Star0_EQU(chessboard, Moves[i].num, Chess, remain_count, remain_total, color, depth, remain_depth); // , -beta, -max(alpha, m)
 
 			if(t > m){ 
 				m = t;
-				*move = Moves[i];
+				*move = Moves[i].num;
 			}
 			if (m >= beta) return m;
 		}
