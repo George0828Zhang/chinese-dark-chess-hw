@@ -1,6 +1,7 @@
 #include "float.h"
 
 #include "MyAI.h"
+#include <algorithm>
 
 #define MAX_DEPTH 3
 
@@ -14,6 +15,8 @@
 
 #define NOEATFLIP_LIMIT 60
 #define POSITION_REPETITION_LIMIT 3
+
+using namespace std;
 
 MyAI::MyAI(void){srand(time(NULL));}
 
@@ -281,7 +284,7 @@ void MyAI::generateMove(char move[6])
 	int best_move;
 
 	// run Nega-max
-	t = Nega_max(this->main_chessboard, &best_move, this->Color, 0, MAX_DEPTH);
+	t = Nega_scout(this->main_chessboard, &best_move, this->Color, 0, MAX_DEPTH, -DBL_MAX, DBL_MAX);
 	t -= OFFSET; // rescale
 
 	// replace the move and score
@@ -597,7 +600,7 @@ double MyAI::Evaluate(const ChessBoard* chessboard,
 	return score;
 }
 
-double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth){
+double MyAI::Nega_scout(const ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth, const double alpha, const double beta){
 
 	int Moves[2048], Chess[2048];
 	int move_count = 0, flip_count = 0, remain_count = 0, remain_total = 0;
@@ -629,43 +632,59 @@ double MyAI::Nega_max(const ChessBoard chessboard, int* move, const int color, c
 		return Evaluate(&chessboard, move_count+flip_count, color) * (depth&1 ? -1 : 1);
 	}else{
 		double m = -DBL_MAX;
+		double n = beta;
 		int new_move;
 		// search deeper
 		for(int i = 0; i < move_count; i++){ // move
 			ChessBoard new_chessboard = chessboard;
 			
 			MakeMove(&new_chessboard, Moves[i], 0); // 0: dummy
-			double t = -Nega_max(new_chessboard, &new_move, color^1, depth+1, remain_depth-1);
+			double t = -Nega_scout(new_chessboard, &new_move, color^1, depth+1, remain_depth-1, -n, -max(alpha, m));
+			if(t > m){ 
+				if (n == beta || remain_depth < 3 || t >= beta){
+					m = t;
+					*move = Moves[i];
+				}
+				else{
+					m = -Nega_scout(new_chessboard, &new_move, color^1, depth+1, remain_depth-1, -beta, -t);
+					*move = Moves[i];
+				}
+			}
+			if (m >= beta) return m; 
+			n = max(alpha, m) + 1;
+		}
+
+		// chance nodes
+		for(int i = move_count; i < move_count + flip_count; i++){ // flip
+			// calculate the expect value of flip
+			double t = Star0_EQU(chessboard, Moves[i], Chess, remain_count, remain_total, color, depth, remain_depth); // , -beta, -max(alpha, m)
+
 			if(t > m){ 
 				m = t;
 				*move = Moves[i];
-			}else if(t == m){
-				bool r = rand()%2;
-				if(r) *move = Moves[i];
 			}
-		}
-		for(int i = move_count; i < move_count + flip_count; i++){ // flip
-			double total = 0;
-			for(int k = 0; k < remain_count; k++){
-				ChessBoard new_chessboard = chessboard;
-				
-				MakeMove(&new_chessboard, Moves[i], Chess[k]);
-				double t = -Nega_max(new_chessboard, &new_move, color^1, depth+1, remain_depth-1);
-				total += chessboard.CoverChess[Chess[k]] * t;
-			}
-
-			double E_score = (total / remain_total); // calculate the expect value of flip
-			if(E_score > m){ 
-				m = E_score;
-				*move = Moves[i];
-			}else if(E_score == m){
-				bool r = rand()%2;
-				if(r) *move = Moves[i];
-			}
+			if (m >= beta) return m;
 		}
 		return m;
 	}
 }
+
+double MyAI::Star0_EQU(const ChessBoard& chessboard, int move, const int* Chess, const int remain_count, const int remain_total, const int color, const int depth, const int remain_depth){
+	int new_move;
+	double total = 0;
+	for(int k = 0; k < remain_count; k++){
+		ChessBoard new_chessboard = chessboard;
+		
+		MakeMove(&new_chessboard, move, Chess[k]);
+
+		int next_col = (color == 2) ? ((Chess[k] / 7)^1) : (color^1);
+
+		double t = -Nega_scout(new_chessboard, &new_move, next_col, depth+1, remain_depth-1, -DBL_MAX, DBL_MAX);
+		total += chessboard.CoverChess[Chess[k]] * t;
+	}
+	return total / remain_total;
+}
+
 
 bool MyAI::isDraw(const ChessBoard* chessboard){
 	// No Eat Flip

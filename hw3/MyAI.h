@@ -110,7 +110,8 @@ private:
 	bool Referee(const int* board, const int Startoint, const int EndPoint, const int color);
 	int Expand(const int* board, const int color, int *Result);
 	double Evaluate(const ChessBoard* chessboard, const int legal_move_count, const int color);
-	double Nega_max(ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth);
+	double Nega_scout(const ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth, const double alpha, const double beta);
+	double Star0_EQU(const ChessBoard& chessboard, int move, const int* Chess, const int remain_count, const int remain_total, const int color, const int depth, const int remain_depth);
 	bool isDraw(const ChessBoard* chessboard);
 	bool isFinish(const ChessBoard* chessboard, int move_count);
 
