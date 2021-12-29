@@ -2,6 +2,13 @@
 
 #include "MyAI.h"
 #include <algorithm>
+#include <cassert>
+
+// #define NOASSERT
+#ifdef NOASSERT
+#undef assert
+#define assert(x) ((void)0)
+#endif
 
 #define MAX_DEPTH 3
 
@@ -215,60 +222,24 @@ int MyAI::ConvertChessNo(int input)
 
 void MyAI::initBoardState()
 {	
-	int iPieceCount[14] = {5, 2, 2, 2, 2, 2, 1, 5, 2, 2, 2, 2, 2, 1};
-	memcpy(main_chessboard.CoverChess, iPieceCount, sizeof(int)*14);
-	main_chessboard.Red_Chess_Num = 16;
-	main_chessboard.Black_Chess_Num = 16;
+	const array<int, 14> iPieceCount{5, 2, 2, 2, 2, 2, 1, 5, 2, 2, 2, 2, 2, 1};
+	main_chessboard.CoverChess = iPieceCount;
+	main_chessboard.AliveChess = iPieceCount;
+	main_chessboard.Chess_Nums.fill(16);
+	main_chessboard.Heads.fill(-1);
 	main_chessboard.NoEatFlip = 0;
-	main_chessboard.HistoryCount = 0;
 
-	// convert to my format
-	int Index = 0;
-	for(int i = 0; i < 8; i++)
-	{
-		for(int j = 0; j < 4; j++)
-		{
-			main_chessboard.Board[Index] = CHESS_COVER;
-			Index++;
-		}
-	}
+	main_chessboard.Board.fill(CHESS_COVER);
+	main_chessboard.Prev.fill(-1);
+	main_chessboard.Next.fill(-1);
+
 	Pirnf_Chessboard();
 }
 
 void MyAI::initBoardState(const char* data[])
 {	
-	memset(main_chessboard.CoverChess, 0, sizeof(int)*14);
-	main_chessboard.Red_Chess_Num = 0;
-	main_chessboard.Black_Chess_Num = 0;
-	main_chessboard.NoEatFlip = 0;
-	main_chessboard.HistoryCount = 0;
-
-	// set board
-	int Index = 0;
-	for(int i = 0; i < 8; i++)
-	{
-		for(int j = 0; j < 4; j++)
-		{
-			// convert to my format
-			int chess = ConvertChessNo(GetFin(data[Index][0]));
-			main_chessboard.Board[Index] = chess;
-			if(chess != CHESS_COVER && chess != CHESS_EMPTY){
-				main_chessboard.CoverChess[chess]--;
-				(chess < 7 ? 
-					main_chessboard.Red_Chess_Num : main_chessboard.Black_Chess_Num)++;
-			}
-			Index++;
-		}
-	}
-	// set covered chess
-	for(int i = 0; i < 14; i++){
-		main_chessboard.CoverChess[i] += data[32 + i][0] - '0';
-		(i < 7 ? 
-			main_chessboard.Red_Chess_Num : main_chessboard.Black_Chess_Num)
-			+= main_chessboard.CoverChess[i];
-	}
-
-	Pirnf_Chessboard();
+	fprintf(stderr, "initBoardState(data) not implemented but called!\n");
+	assert(false);
 }
 
 void MyAI::generateMove(char move[6])
@@ -308,27 +279,130 @@ void MyAI::generateMove(char move[6])
 	this->Pirnf_Chessboard();
 }
 
+void removeFromBoard(ChessBoard* chessboard, const int at){
+	int left = chessboard->Prev[at];
+	int right = chessboard->Next[at];
+	if (left != -1)
+		chessboard->Next[left] = right;
+	if (right != -1)
+		chessboard->Prev[right] = left;
+	chessboard->Prev[at] = -1;
+	chessboard->Next[at] = -1;
+	if (chessboard->Heads[0] == at)
+		chessboard->Heads[0] = right;
+	if (chessboard->Heads[1] == at)
+		chessboard->Heads[1] = right;
+}
+
+void insertInBoard(ChessBoard* chessboard, const int at){
+	assert(chessboard->Board[at] != CHESS_EMPTY);
+	assert(chessboard->Board[at] != CHESS_COVER);
+	/*
+	> 8 : --> use incremental
+	<= 8: --> use list
+	 */
+	const int threshold = 8;
+	int color = chessboard->Board[at] / 7;
+	int old_head = chessboard->Heads[color];
+	if (chessboard->Heads[color] == -1 || chessboard->Heads[color] > at)
+		chessboard->Heads[color] = at;
+	int cur_head = chessboard->Heads[color];
+	int num_chess = chessboard->Chess_Nums[color];
+
+	int left = -1, right = -1;
+	assert(old_head != at);
+	if (cur_head != old_head){
+		right = old_head;
+	}
+	else if (num_chess > threshold){
+		for(int i = at-1; i >= 0; i--){
+			if (chessboard->Board[i] >= 0 && chessboard->Board[i] / 7 == color){
+				left = i;
+				right = chessboard->Next[i];
+				break;
+			}
+		}
+		// definitely have left
+		assert(left != -1);
+	}
+	else{
+		// definitely have cur_head
+		for (int i = cur_head; i != -1; i = chessboard->Next[i]){
+			if (i < at &&
+				(chessboard->Next[i] == -1 || chessboard->Next[i] > at))
+			{
+				left = i;
+				right = chessboard->Next[i];
+				break;
+			}
+		}
+		assert(left != -1);
+	}
+
+	chessboard->Prev[at] = left;
+	chessboard->Next[at] = right;
+	if (left != -1){
+		chessboard->Next[left] = at;
+	}
+	if (right != -1){
+		chessboard->Prev[right] = at;
+	}
+}
+
+void moveInBoard(ChessBoard *chessboard, const int src, const int dst){
+	/* Optimizes:
+	removeFromBoard(chessboard, src);
+	insertInBoard(chessboard, dst);
+	*/
+	int left = chessboard->Prev[src];
+	int right = chessboard->Next[src];
+	if (left < dst &&
+		(right == -1 || right > dst))
+	{
+		if (left != -1)
+			chessboard->Next[left] = dst;
+		if (right != -1)
+			chessboard->Prev[right] = dst;
+		chessboard->Prev[dst] = left;
+		chessboard->Next[dst] = right;
+		chessboard->Prev[src] = -1;
+		chessboard->Next[src] = -1;
+		if (chessboard->Heads[0] == src)
+			chessboard->Heads[0] = dst;
+		if (chessboard->Heads[1] == src)
+			chessboard->Heads[1] = dst;
+	}
+	else{
+		removeFromBoard(chessboard, src);
+		insertInBoard(chessboard, dst);
+	}
+}
+
 void MyAI::MakeMove(ChessBoard* chessboard, const int move, const int chess){
 	int src = move/100, dst = move%100;
 	if(src == dst){ // flip
 		chessboard->Board[src] = chess;
 		chessboard->CoverChess[chess]--;
 		chessboard->NoEatFlip = 0;
+		insertInBoard(chessboard, src);
 	}else { // move
 		if(chessboard->Board[dst] != CHESS_EMPTY){
 			if(chessboard->Board[dst] / 7 == 0){ // red
-				(chessboard->Red_Chess_Num)--;
+				(chessboard->Chess_Nums[0])--;
 			}else{ // black
-				(chessboard->Black_Chess_Num)--;
+				(chessboard->Chess_Nums[1])--;
 			}
+			chessboard->AliveChess[chessboard->Board[dst]]--;
+			removeFromBoard(chessboard, dst);
 			chessboard->NoEatFlip = 0;
 		}else{
 			chessboard->NoEatFlip += 1;
 		}
 		chessboard->Board[dst] = chessboard->Board[src];
 		chessboard->Board[src] = CHESS_EMPTY;
+		moveInBoard(chessboard, src, dst);
 	}
-	chessboard->History[chessboard->HistoryCount++] = move;
+	chessboard->History.push_back(move);
 }
 
 void MyAI::MakeMove(ChessBoard* chessboard, const char move[6])
@@ -347,58 +421,63 @@ void MyAI::MakeMove(ChessBoard* chessboard, const char move[6])
 	Pirnf_Chessboard();
 }
 
-int MyAI::Expand(const int* board, const int color,int *Result)
+int MyAI::Expand(const ChessBoard *chessboard, const int color,int *Result)
 {
+	if (color == 2) return 0;// initial board
+	int n_chess = chessboard->Chess_Nums[color];
+	const array<int, 32>& board = chessboard->Board;
+
 	int ResultCount = 0;
-	for(int i=0;i<32;i++)
-	{
-		if(board[i] >= 0 && board[i]/7 == color)
+	for (int i = chessboard->Heads[color]; i != -1; i = chessboard->Next[i]){
+		n_chess--;
+		// Cannon
+		if(board[i] % 7 == 1)
 		{
-			//Gun
-			if(board[i] % 7 == 1)
+			int row = i/4;
+			int col = i%4;
+			for(int rowCount=row*4;rowCount<(row+1)*4;rowCount++)
 			{
-				int row = i/4;
-				int col = i%4;
-				for(int rowCount=row*4;rowCount<(row+1)*4;rowCount++)
+				if(Referee(board,i,rowCount,color))
 				{
-					if(Referee(board,i,rowCount,color))
-					{
-						Result[ResultCount] = i*100+rowCount;
-						ResultCount++;
-					}
+					Result[ResultCount] = i*100+rowCount;
+					ResultCount++;
 				}
-				for(int colCount=col; colCount<32;colCount += 4)
+			}
+			for(int colCount=col; colCount<32;colCount += 4)
+			{
+			
+				if(Referee(board,i,colCount,color))
 				{
+					Result[ResultCount] = i*100+colCount;
+					ResultCount++;
+				}
+			}
+		}
+		else
+		{
+			int Move[4] = {i-4,i+1,i+4,i-1};
+			for(int k=0; k<4;k++)
+			{
 				
-					if(Referee(board,i,colCount,color))
-					{
-						Result[ResultCount] = i*100+colCount;
-						ResultCount++;
-					}
-				}
-			}
-			else
-			{
-				int Move[4] = {i-4,i+1,i+4,i-1};
-				for(int k=0; k<4;k++)
+				if(Move[k] >= 0 && Move[k] < 32 && Referee(board,i,Move[k],color))
 				{
-					
-					if(Move[k] >= 0 && Move[k] < 32 && Referee(board,i,Move[k],color))
-					{
-						Result[ResultCount] = i*100+Move[k];
-						ResultCount++;
-					}
+					Result[ResultCount] = i*100+Move[k];
+					ResultCount++;
 				}
 			}
-		
-		};
+		}
 	}
+	// n_chess should be num covered
+	for(int i = 0; i < 7; i++){
+		n_chess -= chessboard->CoverChess[color*7 + i];
+	}
+	assert(n_chess == 0);
 	return ResultCount;
 }
 
 
 // Referee
-bool MyAI::Referee(const int* chess, const int from_location_no, const int to_location_no, const int UserId)
+bool MyAI::Referee(const array<int, 32>& chess, const int from_location_no, const int to_location_no, const int UserId)
 {
 	// int MessageNo = 0;
 	bool IsCurrent = true;
@@ -578,19 +657,19 @@ double MyAI::Evaluate(const ChessBoard* chessboard,
 
 	// Bonus (Only Win / Draw)
 	if(finish){
-		if((this->Color == RED && chessboard->Red_Chess_Num > chessboard->Black_Chess_Num) ||
-			(this->Color == BLACK && chessboard->Red_Chess_Num < chessboard->Black_Chess_Num)){
+		if((this->Color == RED && chessboard->Chess_Nums[RED] > chessboard->Chess_Nums[BLACK]) ||
+			(this->Color == BLACK && chessboard->Chess_Nums[RED] < chessboard->Chess_Nums[BLACK])){
 			if(!(legal_move_count == 0 && color == this->Color)){ // except Lose
 				double bonus = BONUS / BONUS_MAX_PIECE * 
-					abs(chessboard->Red_Chess_Num - chessboard->Black_Chess_Num);
+					abs(chessboard->Chess_Nums[RED] - chessboard->Chess_Nums[BLACK]);
 				if(bonus > BONUS){ bonus = BONUS; } // limit
 				score += bonus;
 			}
-		}else if((this->Color == RED && chessboard->Red_Chess_Num < chessboard->Black_Chess_Num) ||
-			(this->Color == BLACK && chessboard->Red_Chess_Num > chessboard->Black_Chess_Num)){
+		}else if((this->Color == RED && chessboard->Chess_Nums[RED] < chessboard->Chess_Nums[BLACK]) ||
+			(this->Color == BLACK && chessboard->Chess_Nums[RED] > chessboard->Chess_Nums[BLACK])){
 			if(!(legal_move_count == 0 && color != this->Color)){ // except Lose
 				double bonus = BONUS / BONUS_MAX_PIECE * 
-					abs(chessboard->Red_Chess_Num - chessboard->Black_Chess_Num);
+					abs(chessboard->Chess_Nums[RED] - chessboard->Chess_Nums[BLACK]);
 				if(bonus > BONUS){ bonus = BONUS; } // limit
 				score -= bonus;
 			}
@@ -606,7 +685,7 @@ double MyAI::Nega_scout(const ChessBoard chessboard, int* move, const int color,
 	int move_count = 0, flip_count = 0, remain_count = 0, remain_total = 0;
 
 	// move
-	move_count = Expand(chessboard.Board, color, Moves);
+	move_count = Expand(&chessboard, color, Moves);
 	// flip
 	for(int j = 0; j < 14; j++){ // find remain chess
 		if(chessboard.CoverChess[j] > 0){
@@ -623,8 +702,8 @@ double MyAI::Nega_scout(const ChessBoard chessboard, int* move, const int color,
 	}
 
 	if(remain_depth <= 0 || // reach limit of depth
-		chessboard.Red_Chess_Num == 0 || // terminal node (no chess type)
-		chessboard.Black_Chess_Num == 0 || // terminal node (no chess type)
+		chessboard.Chess_Nums[RED] == 0 || // terminal node (no chess type)
+		chessboard.Chess_Nums[BLACK] == 0 || // terminal node (no chess type)
 		move_count+flip_count == 0 // terminal node (no move type)
 		){
 		this->node++;
@@ -693,7 +772,7 @@ bool MyAI::isDraw(const ChessBoard* chessboard){
 	}
 
 	// Position Repetition
-	int last_idx = chessboard->HistoryCount - 1;
+	int last_idx = chessboard->History.size() - 1;
 	// -2: my previous ply
 	int idx = last_idx - 2;
 	// All ply must be move type
@@ -722,15 +801,6 @@ bool MyAI::isDraw(const ChessBoard* chessboard){
 	}
 
 	return false;
-}
-
-bool MyAI::isFinish(const ChessBoard* chessboard, int move_count){
-	return (
-		chessboard->Red_Chess_Num == 0 || // terminal node (no chess type)
-		chessboard->Black_Chess_Num == 0 || // terminal node (no chess type)
-		move_count == 0 || // terminal node (no move type)
-		isDraw(chessboard) // draw
-	);
 }
 
 //Display chess board

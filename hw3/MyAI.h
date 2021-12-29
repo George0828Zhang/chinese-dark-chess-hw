@@ -7,6 +7,8 @@
 #include <math.h>
 #include <time.h>
 #include <stdint.h>
+#include <array>
+#include <vector>
 
 #define RED 0
 #define BLACK 1
@@ -14,25 +16,41 @@
 #define CHESS_EMPTY -2
 #define COMMAND_NUM 19
 
-struct ChessBoard{
-	int Board[32];
-	int CoverChess[14];
-	int Red_Chess_Num, Black_Chess_Num;
-	int NoEatFlip;
-	int History[4096];
-	int HistoryCount;
+using namespace std;
 
-	ChessBoard(){}
-	ChessBoard(const ChessBoard &chessBoard){
-		memcpy(this->Board, chessBoard.Board, 32*sizeof(int));
-		memcpy(this->CoverChess, chessBoard.CoverChess, 14*sizeof(int));
-		this->Red_Chess_Num = chessBoard.Red_Chess_Num;
-		this->Black_Chess_Num = chessBoard.Black_Chess_Num;
-		this->NoEatFlip = chessBoard.NoEatFlip;
-		memcpy(this->History, chessBoard.History, chessBoard.HistoryCount*sizeof(int));
-		this->HistoryCount = chessBoard.HistoryCount;
-	}
+class ChessBoard{
+public:
+	array<int, 32> Board;
+	array<int, 32> Prev;
+	array<int, 32> Next;
+	array<int, 14> CoverChess;
+	array<int, 14> AliveChess;
+	array<int, 2> Heads;
+	array<int, 2> Chess_Nums;
+
+	int NoEatFlip;
+	vector<int> History;
 };
+
+// struct ChessBoard{
+// 	int Board[32];
+// 	int CoverChess[14];
+// 	int Red_Chess_Num, Black_Chess_Num;
+// 	int NoEatFlip;
+// 	int History[4096];
+// 	int HistoryCount;
+
+// 	ChessBoard(){}
+// 	ChessBoard(const ChessBoard &chessBoard){
+// 		memcpy(this->Board, chessBoard.Board, 32*sizeof(int));
+// 		memcpy(this->CoverChess, chessBoard.CoverChess, 14*sizeof(int));
+// 		this->Red_Chess_Num = chessBoard.Red_Chess_Num;
+// 		this->Black_Chess_Num = chessBoard.Black_Chess_Num;
+// 		this->NoEatFlip = chessBoard.NoEatFlip;
+// 		memcpy(this->History, chessBoard.History, chessBoard.HistoryCount*sizeof(int));
+// 		this->HistoryCount = chessBoard.HistoryCount;
+// 	}
+// };
 
 class MyAI  
 {
@@ -107,13 +125,12 @@ private:
 	void generateMove(char move[6]);
 	void MakeMove(ChessBoard* chessboard, const int move, const int chess);
 	void MakeMove(ChessBoard* chessboard, const char move[6]);
-	bool Referee(const int* board, const int Startoint, const int EndPoint, const int color);
-	int Expand(const int* board, const int color, int *Result);
+	bool Referee(const array<int, 32>& board, const int Startoint, const int EndPoint, const int color);
+	int Expand(const ChessBoard *chessboard, const int color, int *Result);
 	double Evaluate(const ChessBoard* chessboard, const int legal_move_count, const int color);
 	double Nega_scout(const ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth, const double alpha, const double beta);
 	double Star0_EQU(const ChessBoard& chessboard, int move, const int* Chess, const int remain_count, const int remain_total, const int color, const int depth, const int remain_depth);
 	bool isDraw(const ChessBoard* chessboard);
-	bool isFinish(const ChessBoard* chessboard, int move_count);
 
 	// Display
 	void Pirnf_Chess(int chess_no,char *Result);
