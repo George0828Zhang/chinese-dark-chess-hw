@@ -226,12 +226,16 @@ void MyAI::initBoardState()
 	main_chessboard.CoverChess = iPieceCount;
 	main_chessboard.AliveChess = iPieceCount;
 	main_chessboard.Chess_Nums.fill(16);
-	main_chessboard.Heads.fill(-1);
 	main_chessboard.NoEatFlip = 0;
 
 	main_chessboard.Board.fill(CHESS_COVER);
-	main_chessboard.Prev.fill(-1);
-	main_chessboard.Next.fill(-1);
+
+	// initially, all chess are part of the COVER chain
+	main_chessboard.Heads = { -1, -1, 0 };
+	for(int i = 0; i < 32; i++){
+		main_chessboard.Prev[i] = i - 1;
+		main_chessboard.Next[i] = i == 31 ? -1 : (i + 1);
+	}
 
 	Pirnf_Chessboard();
 }
@@ -288,15 +292,26 @@ void removeFromBoard(ChessBoard* chessboard, const int at){
 		chessboard->Prev[right] = left;
 	chessboard->Prev[at] = -1;
 	chessboard->Next[at] = -1;
-	if (chessboard->Heads[0] == at)
-		chessboard->Heads[0] = right;
-	if (chessboard->Heads[1] == at)
-		chessboard->Heads[1] = right;
+	// if (chessboard->Heads[RED] == at)
+	// 	chessboard->Heads[RED] = right;
+	// if (chessboard->Heads[BLACK] == at)
+	// 	chessboard->Heads[BLACK] = right;
+	for(auto& h: chessboard->Heads){
+		if (h == at){
+			h = right;
+		}
+	}
 }
 
-void insertInBoard(ChessBoard* chessboard, const int at){
+void insertInBoard(ChessBoard* chessboard, const int at, const bool flip){
 	assert(chessboard->Board[at] != CHESS_EMPTY);
 	assert(chessboard->Board[at] != CHESS_COVER);
+
+	if (flip){
+		// remove from COVER chain
+		removeFromBoard(chessboard, at);
+	}
+
 	/*
 	> 8 : --> use incremental
 	<= 8: --> use list
@@ -367,14 +382,14 @@ void moveInBoard(ChessBoard *chessboard, const int src, const int dst){
 		chessboard->Next[dst] = right;
 		chessboard->Prev[src] = -1;
 		chessboard->Next[src] = -1;
-		if (chessboard->Heads[0] == src)
-			chessboard->Heads[0] = dst;
-		if (chessboard->Heads[1] == src)
-			chessboard->Heads[1] = dst;
+		if (chessboard->Heads[RED] == src)
+			chessboard->Heads[RED] = dst;
+		if (chessboard->Heads[BLACK] == src)
+			chessboard->Heads[BLACK] = dst;
 	}
 	else{
 		removeFromBoard(chessboard, src);
-		insertInBoard(chessboard, dst);
+		insertInBoard(chessboard, dst, false);
 	}
 }
 
@@ -384,7 +399,7 @@ void MyAI::MakeMove(ChessBoard* chessboard, const int move, const int chess){
 		chessboard->Board[src] = chess;
 		chessboard->CoverChess[chess]--;
 		chessboard->NoEatFlip = 0;
-		insertInBoard(chessboard, src);
+		insertInBoard(chessboard, src, true);
 	}else { // move
 		if(chessboard->Board[dst] != CHESS_EMPTY){
 			if(chessboard->Board[dst] / 7 == 0){ // red
@@ -694,11 +709,16 @@ double MyAI::Nega_scout(const ChessBoard chessboard, int* move, const int color,
 			remain_total += chessboard.CoverChess[j];
 		}
 	}
-	for(int i = 0; i < 32; i++){ // find cover
-		if(chessboard.Board[i] == CHESS_COVER){
-			Moves[move_count + flip_count] = i*100+i;
-			flip_count++;
-		}
+	// for(int i = 0; i < 32; i++){ // find cover
+	// 	if(chessboard.Board[i] == CHESS_COVER){
+	// 		Moves[move_count + flip_count] = i*100+i;
+	// 		flip_count++;
+	// 	}
+	// }
+	for (int i = chessboard.Heads[2]; i != -1; i = chessboard.Next[i]){
+		assert(chessboard.Board[i] == CHESS_COVER);
+		Moves[move_count + flip_count] = i*100+i;
+		flip_count++;
 	}
 
 	if(remain_depth <= 0 || // reach limit of depth

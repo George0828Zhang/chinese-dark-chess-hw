@@ -25,7 +25,7 @@ public:
 	array<int, 32> Next;
 	array<int, 14> CoverChess;
 	array<int, 14> AliveChess;
-	array<int, 2> Heads;
+	array<int, 3> Heads;
 	array<int, 2> Chess_Nums;
 
 	int NoEatFlip;
