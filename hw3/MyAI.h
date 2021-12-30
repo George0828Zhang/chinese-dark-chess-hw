@@ -100,9 +100,15 @@ private:
 
 #ifdef WINDOWS
 	clock_t begin;
+	clock_t origin;
 #else
 	struct timeval begin;
+	struct timeval origin;
 #endif
+	int num_plys;
+
+	// next ply
+	double ply_time;
 
 	// statistics
 	int node;
@@ -125,6 +131,9 @@ private:
 	double Nega_scout(const ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth, const double alpha, const double beta);
 	double Star0_EQU(const ChessBoard& chessboard, int move, const int* Chess, const int remain_count, const int remain_total, const int color, const int depth, const int remain_depth);
 	bool isDraw(const ChessBoard* chessboard);
+
+	bool isTimeUp();
+	double estimatePlyTime();
 
 	// Display
 	void Pirnf_Chess(int chess_no,char *Result);

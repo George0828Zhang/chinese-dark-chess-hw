@@ -1,5 +1,9 @@
 #include "float.h"
-
+#ifdef WINDOWS
+#include <time.h>
+#else
+#include <sys/time.h>
+#endif
 #include "MyAI.h"
 #include <algorithm>
 #include <cassert>
@@ -10,7 +14,7 @@
 #define assert(x) ((void)0)
 #endif
 
-#define MAX_DEPTH 3
+// #define MAX_DEPTH 3
 
 #define WIN 1.0
 #define DRAW 0.2
@@ -22,6 +26,10 @@
 
 #define NOEATFLIP_LIMIT 60
 #define POSITION_REPETITION_LIMIT 3
+
+#define TOTAL_TIME 900000.
+#define MAX_PLY_TIME 20000.
+#define EXPECT_PLYS 160 / 2
 
 using namespace std;
 
@@ -291,6 +299,7 @@ void MyAI::initBoardState()
 	}
 
 	main_chessboard.History.reserve(1024);
+	num_plys = 0;
 
 	Pirnf_Chessboard();
 }
@@ -308,22 +317,49 @@ void MyAI::generateMove(char move[6])
 	int EndPoint = 0;
 
 	double t = -DBL_MAX;
+#ifdef WINDOWS
+	begin = clock();
+	if (num_plys==0)
+		origin = clock();
+#else
+	gettimeofday(&begin, 0);
+	if (num_plys==0)
+		gettimeofday(&origin, 0);
+#endif
+	num_plys++;
+
+	estimatePlyTime();
+	fprintf(stderr, "Estimate ply time: %+1.3lf s\n", this->ply_time / 1000);
 
 	// iterative-deeping, start from 3, time limit = <TIME_LIMIT> sec
-	this->node = 0;
-	int best_move;
+	for(int depth = 3; !isTimeUp(); depth+=2){
+		this->node = 0;
+		int best_move_tmp; double t_tmp;
 
-	// run Nega-max
-	t = Nega_scout(this->main_chessboard, &best_move, this->Color, 0, MAX_DEPTH, -DBL_MAX, DBL_MAX);
-	t -= OFFSET; // rescale
+		// run Nega-max
+		t_tmp = Nega_scout(this->main_chessboard, &best_move_tmp, this->Color, 0, depth, -DBL_MAX, DBL_MAX);
+		t_tmp -= OFFSET; // rescale
 
-	// replace the move and score
-	StartPoint = best_move/100;
-	EndPoint   = best_move%100;
-	sprintf(move, "%c%c-%c%c",'a'+(StartPoint%4),'1'+(7-StartPoint/4),'a'+(EndPoint%4),'1'+(7-EndPoint/4));
-	fprintf(stderr, "Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s\n",  
-		MAX_DEPTH, node, t, move);
-	fflush(stderr);
+		// check score
+		// if search all nodes
+		// replace the move and score
+		if(!this->timeIsUp || depth == 3){
+			t = t_tmp;
+			StartPoint = best_move_tmp/100;
+			EndPoint   = best_move_tmp%100;
+			sprintf(move, "%c%c-%c%c",'a'+(StartPoint%4),'1'+(7-StartPoint/4),'a'+(EndPoint%4),'1'+(7-EndPoint/4));
+		}
+		// U: Undone
+		// D: Done
+		fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s\n", (this->timeIsUp ? 'U' : 'D'), 
+			depth, node, t, move);
+		fflush(stderr);
+
+		// game finish !!!
+		if(t >= WIN){
+			break;
+		}
+	}
 	
 	char chess_Start[4]="";
 	char chess_End[4]="";
@@ -771,7 +807,8 @@ double MyAI::Nega_scout(const ChessBoard chessboard, int* move, const int color,
 	}
 	flip_count = Moves.size() - move_count;
 
-	if(remain_depth <= 0 || // reach limit of depth
+	if(isTimeUp() || // time is up
+		remain_depth <= 0 || // reach limit of depth
 		chessboard.Chess_Nums[RED] == 0 || // terminal node (no chess type)
 		chessboard.Chess_Nums[BLACK] == 0 || // terminal node (no chess type)
 		move_count+flip_count == 0 // terminal node (no move type)
@@ -871,6 +908,44 @@ bool MyAI::isDraw(const ChessBoard* chessboard){
 	}
 
 	return false;
+}
+
+bool MyAI::isTimeUp(){
+	double elapsed; // ms
+	
+	// design for different os
+#ifdef WINDOWS
+	clock_t end = clock();
+	elapsed = (end - begin);
+#else
+	struct timeval end;
+	gettimeofday(&end, 0);
+	long seconds = end.tv_sec - begin.tv_sec;
+	long microseconds = end.tv_usec - begin.tv_usec;
+	elapsed = (seconds*1000 + microseconds*1e-3);
+#endif
+
+	this->timeIsUp = (elapsed >= this->ply_time);
+	return this->timeIsUp;
+}
+
+double MyAI::estimatePlyTime(){
+	double elapsed; // ms
+	
+	// design for different os
+#ifdef WINDOWS
+	clock_t end = clock();
+	elapsed = (end - origin);
+#else
+	struct timeval end;
+	gettimeofday(&end, 0);
+	long seconds = end.tv_sec - origin.tv_sec;
+	long microseconds = end.tv_usec - origin.tv_usec;
+	elapsed = (seconds*1000 + microseconds*1e-3);
+#endif
+
+	this->ply_time = min(MAX_PLY_TIME, (TOTAL_TIME - elapsed) / (EXPECT_PLYS - num_plys + 1));
+	return this->ply_time;
 }
 
 //Display chess board
