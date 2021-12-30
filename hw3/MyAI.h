@@ -109,6 +109,7 @@ private:
 
 	// next ply
 	double ply_time;
+	double ply_elapsed;
 
 	// statistics
 	int node;

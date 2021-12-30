@@ -14,7 +14,7 @@
 #define assert(x) ((void)0)
 #endif
 
-// #define MAX_DEPTH 3
+#define MAX_DEPTH 31
 
 #define WIN 1.0
 #define DRAW 0.2
@@ -30,6 +30,8 @@
 #define TOTAL_TIME 900000.
 #define MAX_PLY_TIME 20000.
 #define EXPECT_PLYS 160 / 2
+
+#define MAX_FLIPS_IN_SEARCH 2
 
 using namespace std;
 
@@ -332,7 +334,22 @@ void MyAI::generateMove(char move[6])
 	fprintf(stderr, "Estimate ply time: %+1.3lf s\n", this->ply_time / 1000);
 
 	// iterative-deeping, start from 3, time limit = <TIME_LIMIT> sec
-	for(int depth = 3; !isTimeUp(); depth+=2){
+	vector<double> checkpoint;
+	checkpoint.reserve(8);
+
+	for(int depth = 3; !isTimeUp() && depth <= MAX_DEPTH; depth+=2){
+		if (checkpoint.size() >= 2){
+			double ratio = checkpoint[checkpoint.size() - 1];
+			double expected = ratio*ratio / checkpoint[checkpoint.size() - 2];
+
+			if (this->ply_time - this->ply_elapsed < expected){
+				// will early stop -> give up now
+				fprintf(stderr, "Early stopped (not enough time)\n");
+				fflush(stderr);
+				break;
+			}
+		}
+
 		this->node = 0;
 		int best_move_tmp; double t_tmp;
 
@@ -355,6 +372,8 @@ void MyAI::generateMove(char move[6])
 			depth, node, t, move);
 		fflush(stderr);
 
+		checkpoint.push_back(this->ply_elapsed);
+
 		// game finish !!!
 		if(t >= WIN){
 			break;
@@ -366,7 +385,7 @@ void MyAI::generateMove(char move[6])
 	Pirnf_Chess(main_chessboard.Board[StartPoint],chess_Start);
 	Pirnf_Chess(main_chessboard.Board[EndPoint],chess_End);
 	printf("My result: \n--------------------------\n");
-	printf("Nega max: %lf (node: %d)\n", t, this->node);
+	printf("Nega scout: %lf (node: %d)\n", t, this->node);
 	printf("(%d) -> (%d)\n",StartPoint,EndPoint);
 	printf("<%s> -> <%s>\n",chess_Start,chess_End);
 	printf("move:%s\n",move);
@@ -794,18 +813,35 @@ double MyAI::Nega_scout(const ChessBoard chessboard, int* move, const int color,
 	moveOrdering(Moves);
 	
 	// flip
-	for(int j = 0; j < 14; j++){ // find remain chess
-		if(chessboard.CoverChess[j] > 0){
-			Chess[remain_count] = j;
-			remain_count++;
-			remain_total += chessboard.CoverChess[j];
+	// first check whether should do flip
+	if (remain_depth >= 3){
+		int n_flips_before = 0;
+		int hist_size = chessboard.History.size();
+		for(int i = hist_size - 1; i >= max(hist_size - depth, 0); i--){
+			int mv = chessboard.History.at(i);
+			if (mv / 100 == mv % 100){
+				n_flips_before++;
+				if (hist_size - i < 4){
+					n_flips_before = MAX_FLIPS_IN_SEARCH;
+					break;
+				}
+			}
+		}
+		if (n_flips_before < MAX_FLIPS_IN_SEARCH){
+			for(int j = 0; j < 14; j++){ // find remain chess
+				if(chessboard.CoverChess[j] > 0){
+					Chess[remain_count] = j;
+					remain_count++;
+					remain_total += chessboard.CoverChess[j];
+				}
+			}
+			for (int i = chessboard.Heads[2]; i != -1; i = chessboard.Next[i]){
+				assert(chessboard.Board[i] == CHESS_COVER);
+				Moves.emplace_back(chessboard.Board, i, i);
+			}
+			flip_count = Moves.size() - move_count;
 		}
 	}
-	for (int i = chessboard.Heads[2]; i != -1; i = chessboard.Next[i]){
-		assert(chessboard.Board[i] == CHESS_COVER);
-		Moves.emplace_back(chessboard.Board, i, i);
-	}
-	flip_count = Moves.size() - move_count;
 
 	if(isTimeUp() || // time is up
 		remain_depth <= 0 || // reach limit of depth
@@ -924,7 +960,7 @@ bool MyAI::isTimeUp(){
 	long microseconds = end.tv_usec - begin.tv_usec;
 	elapsed = (seconds*1000 + microseconds*1e-3);
 #endif
-
+	this->ply_elapsed = elapsed;
 	this->timeIsUp = (elapsed >= this->ply_time);
 	return this->timeIsUp;
 }
