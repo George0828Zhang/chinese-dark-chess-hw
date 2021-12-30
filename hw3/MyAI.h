@@ -153,11 +153,13 @@ private:
 	void MakeMove(ChessBoard* chessboard, const int move, const int chess);
 	void MakeMove(ChessBoard* chessboard, const char move[6]);
 	bool Referee(const array<int, 32>& board, const int Startoint, const int EndPoint, const int color);
+	bool Referee_debug(const array<int, 32>& board, const int Startoint, const int EndPoint, const int color, int* fail_no);
 	void Expand(const ChessBoard *chessboard, const int color, vector<MoveInfo> &Result);
 	// double Evaluate(const ChessBoard* chessboard, const int legal_move_count, const int color);
 	double Evaluate(const ChessBoard *chessboard, const vector<MoveInfo> &Moves, const int color);
 	double Nega_scout(const ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth, const double alpha, const double beta);
 	double Star0_EQU(const ChessBoard& chessboard, int move, const vector<int>& Choice, const int color, const int depth, const int remain_depth);
+	// double SEE(const ChessBoard *chessboard, const int position, const int color);
 	bool isDraw(const ChessBoard* chessboard);
 
 	bool isTimeUp();

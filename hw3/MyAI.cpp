@@ -9,7 +9,7 @@
 #include <cmath>
 #include <cassert>
 
-// #define NOASSERT
+#define NOASSERT
 #ifdef NOASSERT
 #undef assert
 #define assert(x) ((void)0)
@@ -29,12 +29,10 @@
 #define POSITION_REPETITION_LIMIT 3
 
 #define TOTAL_TIME 900000.
-#define MAX_PLY_TIME 20000.
-#define EXPECT_PLYS 160 / 2
+#define MAX_PLY_TIME 15000.
+#define EXPECT_PLYS 180 / 2
 
 #define MAX_FLIPS_IN_SEARCH 2
-
-#define WALL_DECAY 0.9
 
 using namespace std;
 
@@ -191,33 +189,16 @@ MoveInfo::MoveInfo(const array<int, 32>& board, int from, int to){
 	}
 	else{
 		int from_id = (from_chess_no % 7)+1;
-		int noise = 0;
+		int noise = rand()%10;
 		priority = (from_id*10 + noise) * PRIORITY_MOVE;
 	}
 }
-bool operator > (const MoveInfo& c1, const MoveInfo& c2){
-    return c1.priority > c2.priority;
+bool operator < (const MoveInfo& c1, const MoveInfo& c2){
+    return c1.priority < c2.priority;
 }
 void moveOrdering(vector<MoveInfo>& Moves){
-	/* make priority high appear sooner 
-	Option1: we build a max heap O(N)
-	Option2: we use insertion sort which is fast for N < 32
-	*/
-	int N = Moves.size();
-	// build max heap
-	for(int j = N / 2 - 1; j >= 0; j--){
-		// max heapify
-		int p = j;
-		while((2 * p + 1) < N){
-			int chd = 2 * p + 1;
-			if(chd + 1 < N && Moves[chd + 1] > Moves[chd])
-				chd = chd + 1;
-			if(Moves[chd] > Moves[p]){
-				swap(Moves[chd], Moves[p]);
-				p = chd;
-			}else break;
-		}
-	}
+	// sort(Moves.begin(), Moves.end(), [](const MoveInfo& a, const MoveInfo& b) {return a.priority > b.priority;});
+	make_heap(Moves.begin(), Moves.end());
 }
 
 // *********************** AI FUNCTION *********************** //
@@ -368,6 +349,8 @@ void MyAI::generateMove(char move[6])
 		// D: Done
 		double wall = this->ply_elapsed - prev_end;
 		prev_end = this->ply_elapsed;
+		expected = wall;
+
 		// depth_wall[depth].add(wall);
 		// if (depth > 3){
 		// 	double prev_time = depth_wall[depth - 2].mean();
@@ -564,40 +547,77 @@ void MyAI::Expand(const ChessBoard *chessboard, const int color, vector<MoveInfo
 	if (color == 2) return;// initial board
 	int n_chess = chessboard->Chess_Nums[color];
 	const array<int, 32>& board = chessboard->Board;
+	const array<int, 32*10> cannon_shoot{
+		1, 2, 3, 4, 8, 12, 16, 20, 24, 28, 
+		0, 2, 3, 5, 9, 13, 17, 21, 25, 29, 
+		0, 1, 3, 6, 10, 14, 18, 22, 26, 30, 
+		0, 1, 2, 7, 11, 15, 19, 23, 27, 31, 
+		0, 5, 6, 7, 8, 12, 16, 20, 24, 28, 
+		1, 4, 6, 7, 9, 13, 17, 21, 25, 29, 
+		2, 4, 5, 7, 10, 14, 18, 22, 26, 30, 
+		3, 4, 5, 6, 11, 15, 19, 23, 27, 31, 
+		0, 4, 9, 10, 11, 12, 16, 20, 24, 28, 
+		1, 5, 8, 10, 11, 13, 17, 21, 25, 29, 
+		2, 6, 8, 9, 11, 14, 18, 22, 26, 30, 
+		3, 7, 8, 9, 10, 15, 19, 23, 27, 31, 
+		0, 4, 8, 13, 14, 15, 16, 20, 24, 28, 
+		1, 5, 9, 12, 14, 15, 17, 21, 25, 29, 
+		2, 6, 10, 12, 13, 15, 18, 22, 26, 30, 
+		3, 7, 11, 12, 13, 14, 19, 23, 27, 31, 
+		0, 4, 8, 12, 17, 18, 19, 20, 24, 28, 
+		1, 5, 9, 13, 16, 18, 19, 21, 25, 29, 
+		2, 6, 10, 14, 16, 17, 19, 22, 26, 30, 
+		3, 7, 11, 15, 16, 17, 18, 23, 27, 31, 
+		0, 4, 8, 12, 16, 21, 22, 23, 24, 28, 
+		1, 5, 9, 13, 17, 20, 22, 23, 25, 29, 
+		2, 6, 10, 14, 18, 20, 21, 23, 26, 30, 
+		3, 7, 11, 15, 19, 20, 21, 22, 27, 31, 
+		0, 4, 8, 12, 16, 20, 25, 26, 27, 28, 
+		1, 5, 9, 13, 17, 21, 24, 26, 27, 29, 
+		2, 6, 10, 14, 18, 22, 24, 25, 27, 30, 
+		3, 7, 11, 15, 19, 23, 24, 25, 26, 31, 
+		0, 4, 8, 12, 16, 20, 24, 29, 30, 31, 
+		1, 5, 9, 13, 17, 21, 25, 28, 30, 31, 
+		2, 6, 10, 14, 18, 22, 26, 28, 29, 31, 
+		3, 7, 11, 15, 19, 23, 27, 28, 29, 30
+	};
 
 	for (int i = chessboard->Heads[color]; i != -1; i = chessboard->Next[i]){
 		n_chess--;
+		int row = i/4;
+		int col = i%4;
 		// Cannon
 		if(board[i] % 7 == 1)
 		{
-			int row = i/4;
-			int col = i%4;
-			for(int rowCount=row*4;rowCount<(row+1)*4;rowCount++)
-			{
-				if(Referee(board,i,rowCount,color))
+			for(int j = 0; j < 10; j++){
+				int dst = cannon_shoot.at(i*10+j);
+				if(Referee(board,i,dst,color))
 				{
-					Result.emplace_back(board, i, rowCount);
-				}
-			}
-			for(int colCount=col; colCount<32;colCount += 4)
-			{
-			
-				if(Referee(board,i,colCount,color))
-				{
-					Result.emplace_back(board, i, colCount);
+					Result.emplace_back(board, i, dst);
 				}
 			}
 		}
 		else
 		{
-			int Move[4] = {i-4,i+1,i+4,i-1};
-			for(int k=0; k<4;k++)
+			// up
+			if(row > 0 && Referee(board,i,i-4,color))
 			{
-				
-				if(Move[k] >= 0 && Move[k] < 32 && Referee(board,i,Move[k],color))
-				{
-					Result.emplace_back(board, i, Move[k]);
-				}
+				Result.emplace_back(board, i, i-4);
+			}
+			// down
+			if(row < 7 && Referee(board,i,i+4,color))
+			{
+				Result.emplace_back(board, i, i+4);
+			}
+			// left
+			if(col > 0 && Referee(board,i,i-1,color))
+			{
+				Result.emplace_back(board, i, i-1);
+			}
+			// right
+			if(col < 3 && Referee(board,i,i+1,color))
+			{
+				Result.emplace_back(board, i, i+1);
 			}
 		}
 	}
@@ -621,24 +641,130 @@ bool MyAI::Referee(const array<int, 32>& chess, const int from_location_no, cons
 	int from_col = from_location_no % 4;
 	int to_col = to_location_no % 4;
 
+	static array<bool, 7*7> can_eat{
+		/* 
+		p  c  n  r  m  g  k  */
+		1, 0, 0, 0, 0, 0, 1, // p -> pawn, king
+		0, 0, 0, 0, 0, 0, 0, // c -> need to jump first
+		1, 1, 1, 0, 0, 0, 0, // n
+		1, 1, 1, 1, 0, 0, 0, // r
+		1, 1, 1, 1, 1, 0, 0, // m
+		1, 1, 1, 1, 1, 1, 0, // g
+		0, 1, 1, 1, 1, 1, 1  // k -> !pawn
+	};
+
+	/* Gaurantees:
+	1. from_chess_no >= 0 and from_chess_no / 7 == UserId
+	2. from_loc != to_loc
+	3. for cannon, from_loc and to_loc are on the same row or column, and in board
+	4. for others, from_loc and to_loc are adjacent and in board
+	*/
+	assert(from_chess_no >= 0);
+	assert(from_location_no != to_location_no);
+	assert(
+		((from_chess_no % 7 == 1) && (from_row == to_row || from_col == to_col))||
+		((from_chess_no % 7 != 1) && (abs(from_row-to_row) + abs(from_col-to_col) == 1))
+	);
+
+
+	if(to_chess_no == CHESS_COVER){
+		IsCurrent = false;
+	}
+	else if (to_chess_no >= 0 && (to_chess_no / 7 == UserId)){
+		IsCurrent = false;
+	}
+	else if (from_chess_no % 7 != 1)// not cannon
+	{
+		IsCurrent = (to_chess_no == CHESS_EMPTY) || can_eat.at((from_chess_no % 7)*7 + (to_chess_no % 7));
+	}
+	else if(to_chess_no == CHESS_EMPTY && abs(from_row-to_row) + abs(from_col-to_col)  == 1)//cannon walk
+	{
+		IsCurrent = true;
+	}	
+	else// cannon jump
+	{		
+		int row_gap = from_row-to_row;
+		int col_gap = from_col-to_col;
+		int between_Count = 0;
+		//row
+		if(row_gap == 0) 
+		{
+			for(int i=1;i<abs(col_gap);i++)
+			{
+				int between_chess;
+				if(col_gap>0)
+					between_chess = chess[from_location_no-i];
+				else
+					between_chess = chess[from_location_no+i];
+				if(between_chess != CHESS_EMPTY)
+					between_Count++;
+			}
+		}
+		//column
+		else
+		{
+			for(int i=1;i<abs(row_gap);i++)
+			{
+				int between_chess;
+				if(row_gap > 0)
+					between_chess = chess[from_location_no-4*i];
+				else
+					between_chess = chess[from_location_no+4*i];
+				if(between_chess != CHESS_EMPTY)
+					between_Count++;
+			}
+			
+		}
+
+		if(between_Count != 1 )
+		{
+			// MessageNo = 4;
+			//strcat(Message,"**gun can't eat opp without between one piece**");
+			IsCurrent = false;
+		}
+		else if(to_chess_no == CHESS_EMPTY)
+		{
+			// MessageNo = 5;
+			//strcat(Message,"**gun can't eat opp without between one piece**");
+			IsCurrent = false;
+		}
+	}
+	int fail_no;
+	assert(Referee_debug(chess, from_location_no, to_location_no, UserId, &fail_no) == IsCurrent);
+	return IsCurrent;
+}
+bool MyAI::Referee_debug(const std::array<int, 32>& chess, const int from_location_no, const int to_location_no, const int UserId, int *fail_no)
+{
+	// int MessageNo = 0;
+	bool IsCurrent = true;
+	int from_chess_no = chess[from_location_no];
+	int to_chess_no = chess[to_location_no];
+	int from_row = from_location_no / 4;
+	int to_row = to_location_no / 4;
+	int from_col = from_location_no % 4;
+	int to_col = to_location_no % 4;
+
 	if(from_chess_no < 0 || ( to_chess_no < 0 && to_chess_no != CHESS_EMPTY) )
 	{  
 		// MessageNo = 1;
 		//strcat(Message,"**no chess can move**");
 		//strcat(Message,"**can't move darkchess**");
 		IsCurrent = false;
+		*fail_no = 0;
 	}
 	else if (from_chess_no >= 0 && from_chess_no / 7 != UserId)
 	{
 		// MessageNo = 2;
 		//strcat(Message,"**not my chess**");
 		IsCurrent = false;
+		*fail_no = 1;
 	}
 	else if((from_chess_no / 7 == to_chess_no / 7) && to_chess_no >= 0)
 	{
 		// MessageNo = 3;
 		//strcat(Message,"**can't eat my self**");
 		IsCurrent = false;
+		*fail_no = 2;
 	}
 	//check attack
 	else if(to_chess_no == CHESS_EMPTY && abs(from_row-to_row) + abs(from_col-to_col)  == 1)//legal move
@@ -688,12 +814,14 @@ bool MyAI::Referee(const array<int, 32>& chess, const int from_location_no, cons
 				// MessageNo = 4;
 				//strcat(Message,"**gun can't eat opp without between one piece**");
 				IsCurrent = false;
+				*fail_no = 3;
 			}
 			else if(to_chess_no == CHESS_EMPTY)
 			{
 				// MessageNo = 5;
 				//strcat(Message,"**gun can't eat opp without between one piece**");
 				IsCurrent = false;
+				*fail_no = 4;
 			}
 		}
 		//slide
@@ -702,6 +830,7 @@ bool MyAI::Referee(const array<int, 32>& chess, const int from_location_no, cons
 			// MessageNo = 6;
 			//strcat(Message,"**cant slide**");
 			IsCurrent = false;
+			*fail_no = 5;
 		}
 	}
 	else // non gun
@@ -714,6 +843,7 @@ bool MyAI::Referee(const array<int, 32>& chess, const int from_location_no, cons
 			// MessageNo = 7;
 			//strcat(Message,"**cant eat**");
 			IsCurrent = false;
+			*fail_no = 6;
 		}
 		//judge pawn
 		else if(from_chess_no % 7 == 0)
@@ -723,6 +853,7 @@ bool MyAI::Referee(const array<int, 32>& chess, const int from_location_no, cons
 				// MessageNo = 8;
 				//strcat(Message,"**pawn only eat pawn and king**");
 				IsCurrent = false;
+				*fail_no = 7;
 			}
 		}
 		//judge king
@@ -731,16 +862,19 @@ bool MyAI::Referee(const array<int, 32>& chess, const int from_location_no, cons
 			// MessageNo = 9;
 			//strcat(Message,"**king can't eat pawn**");
 			IsCurrent = false;
+			*fail_no = 8;
 		}
 		else if(from_chess_no % 7 < to_chess_no% 7)
 		{
 			// MessageNo = 10;
 			//strcat(Message,"**cant eat**");
 			IsCurrent = false;
+			*fail_no = 9;
 		}
 	}
 	return IsCurrent;
 }
+
 
 double evalColor(const ChessBoard *chessboard, const vector<MoveInfo> &Moves, const int color)
 {
@@ -932,7 +1066,7 @@ double MyAI::Nega_scout(const ChessBoard chessboard, int* move, const int color,
 	}
 
 	if(isTimeUp() || // time is up
-		remain_depth <= 0 || // reach limit of depth
+		remain_depth <= 0 || // reach limit of depth 
 		chessboard.Chess_Nums[RED] == 0 || // terminal node (no chess type)
 		chessboard.Chess_Nums[BLACK] == 0 || // terminal node (no chess type)
 		move_count+flip_count == 0 // terminal node (no move type)
@@ -950,6 +1084,10 @@ double MyAI::Nega_scout(const ChessBoard chessboard, int* move, const int color,
 			
 			MakeMove(&new_chessboard, Moves[i].num, 0); // 0: dummy
 			double t = -Nega_scout(new_chessboard, &new_move, color^1, depth+1, remain_depth-1, -n, -max(alpha, m));
+			bool draw_penalize = (color == this->Color) && isDraw(&new_chessboard);
+			if (draw_penalize){
+				t -= WIN;
+			}
 			if(t > m){ 
 				if (n == beta || remain_depth < 3 || t >= beta){
 					m = t;
@@ -957,6 +1095,8 @@ double MyAI::Nega_scout(const ChessBoard chessboard, int* move, const int color,
 				}
 				else{
 					m = -Nega_scout(new_chessboard, &new_move, color^1, depth+1, remain_depth-1, -beta, -t);
+					if (draw_penalize)
+						m -= WIN;
 					*move = Moves[i].num;
 				}
 			}
@@ -989,7 +1129,7 @@ double MyAI::Star0_EQU(const ChessBoard& chessboard, int move, const vector<int>
 
 		int next_col = (color == 2) ? ((k / 7)^1) : (color^1);
 
-		double t = -Nega_scout(new_chessboard, &new_move, next_col, depth+1, remain_depth-1, -DBL_MAX, DBL_MAX);
+		double t = -Nega_scout(new_chessboard, &new_move, next_col, depth+1, remain_depth-3, -DBL_MAX, DBL_MAX);
 		total += chessboard.CoverChess[k] * t;
 	}
 	assert(chessboard.Chess_Nums[2] > 0);
@@ -1069,7 +1209,9 @@ double MyAI::estimatePlyTime(){
 	elapsed = (seconds*1000 + microseconds*1e-3);
 #endif
 
-	this->ply_time = min(MAX_PLY_TIME, (TOTAL_TIME - elapsed) / max(1, EXPECT_PLYS - num_plys + 1));
+	double real_exp_ply = max(EXPECT_PLYS, num_plys + 45 + this->main_chessboard.Chess_Nums[this->Color^1]);
+
+	this->ply_time = min(MAX_PLY_TIME, (TOTAL_TIME - elapsed) / (real_exp_ply - num_plys + 1));
 	assert(this->ply_time <= MAX_PLY_TIME);
 	assert(this->ply_time >= 0);
 	return this->ply_time;
