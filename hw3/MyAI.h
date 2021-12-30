@@ -26,7 +26,7 @@ public:
 	array<int, 14> CoverChess;
 	array<int, 14> AliveChess;
 	array<int, 3> Heads;
-	array<int, 2> Chess_Nums;
+	array<int, 3> Chess_Nums;
 
 	int NoEatFlip;
 	vector<int> History;
@@ -43,6 +43,33 @@ public:
 	MoveInfo(const array<int, 32>& board, int from, int to);
 	friend bool operator > (const MoveInfo& l, const MoveInfo& r);
 };
+
+// class WallHistory{
+// 	array<double, 5> wall;
+// 	double wall_sum, wall_sum2;
+// 	int history;
+// 	int capacity;
+// public:
+// 	WallHistory():wall_sum(0),wall_sum2(0),history(0),capacity(wall.size()){}
+// 	int add(double w){
+// 		int index = history % capacity;
+// 		if(history >= capacity){
+// 			wall_sum -= wall[index];
+// 			wall_sum2 -= wall[index]*wall[index];
+// 		}
+// 		wall[index] = w;
+// 		wall_sum += w;
+// 		wall_sum2 += w*w;
+// 		history++;
+// 		return history;
+// 	}
+// 	double mean(){
+// 		return history < capacity ? 0 : (wall_sum / capacity);
+// 	}
+// 	double std(double mu){
+// 		return history < capacity ? 0 : sqrt(wall_sum2 / capacity - mu*mu);
+// 	}
+// };
 
 class MyAI  
 {
@@ -113,6 +140,7 @@ private:
 
 	// statistics
 	int node;
+	// array<WallHistory, 34> depth_wall;
 
 	// Utils
 	int GetFin(char c);
@@ -125,12 +153,11 @@ private:
 	void MakeMove(ChessBoard* chessboard, const int move, const int chess);
 	void MakeMove(ChessBoard* chessboard, const char move[6]);
 	bool Referee(const array<int, 32>& board, const int Startoint, const int EndPoint, const int color);
-	// int Expand(const ChessBoard *chessboard, const int color, int *Result);
 	void Expand(const ChessBoard *chessboard, const int color, vector<MoveInfo> &Result);
-	double Evaluate(const ChessBoard* chessboard, const int legal_move_count, const int color);
-	// double Evaluate(const ChessBoard *chessboard, const std::vector<MoveInfo> &Moves, const int color);
+	// double Evaluate(const ChessBoard* chessboard, const int legal_move_count, const int color);
+	double Evaluate(const ChessBoard *chessboard, const vector<MoveInfo> &Moves, const int color);
 	double Nega_scout(const ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth, const double alpha, const double beta);
-	double Star0_EQU(const ChessBoard& chessboard, int move, const int* Chess, const int remain_count, const int remain_total, const int color, const int depth, const int remain_depth);
+	double Star0_EQU(const ChessBoard& chessboard, int move, const vector<int>& Choice, const int color, const int depth, const int remain_depth);
 	bool isDraw(const ChessBoard* chessboard);
 
 	bool isTimeUp();

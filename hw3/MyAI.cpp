@@ -6,6 +6,7 @@
 #endif
 #include "MyAI.h"
 #include <algorithm>
+#include <cmath>
 #include <cassert>
 
 // #define NOASSERT
@@ -32,6 +33,8 @@
 #define EXPECT_PLYS 160 / 2
 
 #define MAX_FLIPS_IN_SEARCH 2
+
+#define WALL_DECAY 0.9
 
 using namespace std;
 
@@ -288,7 +291,7 @@ void MyAI::initBoardState()
 	const array<int, 14> iPieceCount{5, 2, 2, 2, 2, 2, 1, 5, 2, 2, 2, 2, 2, 1};
 	main_chessboard.CoverChess = iPieceCount;
 	main_chessboard.AliveChess = iPieceCount;
-	main_chessboard.Chess_Nums.fill(16);
+	main_chessboard.Chess_Nums = { 16, 16, 32 };
 	main_chessboard.NoEatFlip = 0;
 
 	main_chessboard.Board.fill(CHESS_COVER);
@@ -334,20 +337,15 @@ void MyAI::generateMove(char move[6])
 	fprintf(stderr, "Estimate ply time: %+1.3lf s\n", this->ply_time / 1000);
 
 	// iterative-deeping, start from 3, time limit = <TIME_LIMIT> sec
-	vector<double> checkpoint;
-	checkpoint.reserve(8);
+	double expected = 0;
+	double prev_end = 0;
 
 	for(int depth = 3; !isTimeUp() && depth <= MAX_DEPTH; depth+=2){
-		if (checkpoint.size() >= 2){
-			double ratio = checkpoint[checkpoint.size() - 1];
-			double expected = ratio*ratio / checkpoint[checkpoint.size() - 2];
-
-			if (this->ply_time - this->ply_elapsed < expected){
-				// will early stop -> give up now
-				fprintf(stderr, "Early stopped (not enough time)\n");
-				fflush(stderr);
-				break;
-			}
+		if (this->ply_time - this->ply_elapsed < expected){
+			// will early stop -> give up now
+			fprintf(stderr, "Early stopped. Expected: %1.3lf, Remain: %1.3lf\n", expected / 1000, (this->ply_time - this->ply_elapsed) / 1000);
+			fflush(stderr);
+			break;
 		}
 
 		this->node = 0;
@@ -368,11 +366,25 @@ void MyAI::generateMove(char move[6])
 		}
 		// U: Undone
 		// D: Done
-		fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s\n", (this->timeIsUp ? 'U' : 'D'), 
-			depth, node, t, move);
-		fflush(stderr);
+		double wall = this->ply_elapsed - prev_end;
+		prev_end = this->ply_elapsed;
+		// depth_wall[depth].add(wall);
+		// if (depth > 3){
+		// 	double prev_time = depth_wall[depth - 2].mean();
+		// 	double cur_time = depth_wall[depth].mean();
 
-		checkpoint.push_back(this->ply_elapsed);
+		// 	double prev_std = depth_wall[depth - 2].std(prev_time);
+		// 	double cur_std = depth_wall[depth].std(cur_time);
+		// 	const double error = 1000; // ms
+		// 	if(prev_time > 0 && prev_std < error && cur_time > 0 && cur_std < error){
+		// 		// cur_time -= cur_std;
+		// 		expected = cur_time / prev_time * cur_time;
+		// 	}
+		// }
+
+		fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s, Wall: %1.3lf, Next: %1.3lf\n", (this->timeIsUp ? 'U' : 'D'),
+			depth, node, t, move, wall / 1000, expected / 1000);
+		fflush(stderr);
 
 		// game finish !!!
 		if(t >= WIN){
@@ -508,6 +520,7 @@ void MyAI::MakeMove(ChessBoard* chessboard, const int move, const int chess){
 	if(src == dst){ // flip
 		chessboard->Board[src] = chess;
 		chessboard->CoverChess[chess]--;
+		chessboard->Chess_Nums[2]--;
 		chessboard->NoEatFlip = 0;
 		insertInBoard(chessboard, src, true);
 	}else { // move
@@ -729,14 +742,85 @@ bool MyAI::Referee(const array<int, 32>& chess, const int from_location_no, cons
 	return IsCurrent;
 }
 
+double evalColor(const ChessBoard *chessboard, const vector<MoveInfo> &Moves, const int color)
+{
+	array<double, 14> values{
+		1, 180, 6, 18, 90, 270, 810,
+		1, 180, 6, 18, 90, 270, 810};
+	// if eat a pawn, my king adds this much to its value
+	// 5->4 : 0
+	// 4->3 : 5
+	// 3->2 : 17
+	// 2->1 : 80
+	// 1->0 : 260 
+	static array<double, 6> king_add_n_pawn{  381, 111, 22, 5, 0, 0 };
+
+	// adjust king value
+	for(int c = 0; c < 2; c++){
+		int op_king = (!c) * 7 + 6;
+		int my_pawn = c * 7 + 0;
+		int n = chessboard->AliveChess[my_pawn];
+		values[op_king] += king_add_n_pawn[n];
+	}
+
+	double max_value = 1*5 + 180*2 + 6*2 + 18*2 + 90*2 + 270*2 + 810*1 + king_add_n_pawn[0];
+
+	double value = 0;
+	for (int i = chessboard->Heads[color]; i != -1; i = chessboard->Next[i])
+	{
+		value += values[chessboard->Board[i]];
+	}
+	// covered
+	for(int i = 0; i < 7; i++){
+		int p = color * 7 + i;
+		value += chessboard->CoverChess[p] * values[p];
+	}
+
+	/*
+	max mobility = 12 + 12 + 14 + 14 = 52 (can right + can left + up + down.)
+	max increase:
+		normal: +6
+		value aware: (810 + king_add_n_pawn[0])*3 + 270*2 + 180
+	*/
+#ifdef UMOBI
+	double mobilities[32] = {0};
+	for(auto& m: Moves){
+		mobilities[m.from_location_no]++;
+	}
+	const double w_mob = 1/6;
+	const double max_mobi = 60;
+#else
+	const double w_mob = 1/((810 + king_add_n_pawn[0])*3 + 270*2 + 180);
+	const double max_mobi = ((2*2+3*3) + 180*2*4 + 6*2*3 + 18*2*3 + 90*1*3 + (90*1 + 270*2 + 810*1 + king_add_n_pawn[0])*4)*w_mob;
+#endif	
+	double mobility = 0;
+	for(auto& m: Moves){
+		if(m.from_chess_no == CHESS_COVER)
+			continue;
+#ifdef UMOBI
+		mobility += w_mob;
+#else
+		mobility += values[m.from_chess_no]*w_mob;
+#endif
+	}
+
+	value += mobility;
+	max_value += max_mobi;
+	assert(value <= max_value);
+
+	return value / max_value;
+}
+
+
 // always use my point of view, so use this->Color
 double MyAI::Evaluate(const ChessBoard* chessboard, 
-	const int legal_move_count, const int color){
+	const vector<MoveInfo>& Moves, const int color){
 	// score = My Score - Opponent's Score
 	// offset = <WIN + BONUS> to let score always not less than zero
 
 	double score = OFFSET;
 	bool finish;
+	int legal_move_count = Moves.size();
 
 	if(legal_move_count == 0){ // Win, Lose
 		if(color == this->Color){ // Lose
@@ -747,31 +831,35 @@ double MyAI::Evaluate(const ChessBoard* chessboard,
 		finish = true;
 	}else if(isDraw(chessboard)){ // Draw
 		// score += DRAW - DRAW;
-		finish = true;
+		finish = false;
 	}else{ // no conclusion
-		// static material values
-		// cover and empty are both zero
-		static const double values[14] = {
-			  1,180,  6, 18, 90,270,810,  
-			  1,180,  6, 18, 90,270,810
-		};
+
+		vector<MoveInfo> myMoves;
+		vector<MoveInfo> oppMoves;
+		myMoves.reserve(128);
+		oppMoves.reserve(128);
 		
-		double piece_value = 0;
-		for(int i = 0; i < 32; i++){
-			if(chessboard->Board[i] != CHESS_EMPTY && 
-				chessboard->Board[i] != CHESS_COVER){
-				if(chessboard->Board[i] / 7 == this->Color){
-					piece_value += values[chessboard->Board[i]];
-				}else{
-					piece_value -= values[chessboard->Board[i]];
-				}
-			}
+		if (color == this->Color){
+			// copy mine, then expand opponent
+			myMoves = Moves;
+			Expand(chessboard, this->Color^1, oppMoves);
 		}
+		else{
+			// copy opponent, then expand mine
+			oppMoves = Moves;
+			Expand(chessboard, this->Color, myMoves);
+		}
+
+		// My Material
+		double piece_value = (
+			evalColor(chessboard, myMoves, this->Color) -
+			evalColor(chessboard, oppMoves, this->Color^1)
+		);
+
 		// linear map to (-<WIN>, <WIN>)
-		// score max value = 1*5 + 180*2 + 6*2 + 18*2 + 90*2 + 270*2 + 810*1 = 1943
-		// <ORIGINAL_SCORE> / <ORIGINAL_SCORE_MAX_VALUE> * (<WIN> - 0.01)
-		piece_value = piece_value / 1943 * (WIN - 0.01);
-		score += piece_value; 
+		piece_value = piece_value / 1.0 * (WIN - 0.01);
+
+		score += piece_value;
 		finish = false;
 	}
 
@@ -801,8 +889,7 @@ double MyAI::Evaluate(const ChessBoard* chessboard,
 
 double MyAI::Nega_scout(const ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth, const double alpha, const double beta){
 
-	int Chess[2048];
-	int move_count = 0, flip_count = 0, remain_count = 0, remain_total = 0;
+	int move_count = 0, flip_count = 0;
 
 	vector<MoveInfo> Moves;	
 	Moves.reserve(128);
@@ -814,6 +901,9 @@ double MyAI::Nega_scout(const ChessBoard chessboard, int* move, const int color,
 	
 	// flip
 	// first check whether should do flip
+	vector<int> Choice;
+	Choice.reserve(16);
+
 	if (remain_depth >= 3){
 		int n_flips_before = 0;
 		int hist_size = chessboard.History.size();
@@ -830,9 +920,7 @@ double MyAI::Nega_scout(const ChessBoard chessboard, int* move, const int color,
 		if (n_flips_before < MAX_FLIPS_IN_SEARCH){
 			for(int j = 0; j < 14; j++){ // find remain chess
 				if(chessboard.CoverChess[j] > 0){
-					Chess[remain_count] = j;
-					remain_count++;
-					remain_total += chessboard.CoverChess[j];
+					Choice.push_back(j);
 				}
 			}
 			for (int i = chessboard.Heads[2]; i != -1; i = chessboard.Next[i]){
@@ -851,7 +939,7 @@ double MyAI::Nega_scout(const ChessBoard chessboard, int* move, const int color,
 		){
 		this->node++;
 		// odd: *-1, even: *1
-		return Evaluate(&chessboard, move_count+flip_count, color) * (depth&1 ? -1 : 1);
+		return Evaluate(&chessboard, Moves, color) * (depth&1 ? -1 : 1);
 	}else{
 		double m = -DBL_MAX;
 		double n = beta;
@@ -879,7 +967,7 @@ double MyAI::Nega_scout(const ChessBoard chessboard, int* move, const int color,
 		// chance nodes
 		for(int i = move_count; i < move_count + flip_count; i++){ // flip
 			// calculate the expect value of flip
-			double t = Star0_EQU(chessboard, Moves[i].num, Chess, remain_count, remain_total, color, depth, remain_depth); // , -beta, -max(alpha, m)
+			double t = Star0_EQU(chessboard, Moves[i].num, Choice, color, depth, remain_depth);
 
 			if(t > m){ 
 				m = t;
@@ -891,20 +979,21 @@ double MyAI::Nega_scout(const ChessBoard chessboard, int* move, const int color,
 	}
 }
 
-double MyAI::Star0_EQU(const ChessBoard& chessboard, int move, const int* Chess, const int remain_count, const int remain_total, const int color, const int depth, const int remain_depth){
+double MyAI::Star0_EQU(const ChessBoard& chessboard, int move, const vector<int>& Choice, const int color, const int depth, const int remain_depth){
 	int new_move;
 	double total = 0;
-	for(int k = 0; k < remain_count; k++){
+	for(auto& k: Choice){
 		ChessBoard new_chessboard = chessboard;
 		
-		MakeMove(&new_chessboard, move, Chess[k]);
+		MakeMove(&new_chessboard, move, k);
 
-		int next_col = (color == 2) ? ((Chess[k] / 7)^1) : (color^1);
+		int next_col = (color == 2) ? ((k / 7)^1) : (color^1);
 
 		double t = -Nega_scout(new_chessboard, &new_move, next_col, depth+1, remain_depth-1, -DBL_MAX, DBL_MAX);
-		total += chessboard.CoverChess[Chess[k]] * t;
+		total += chessboard.CoverChess[k] * t;
 	}
-	return total / remain_total;
+	assert(chessboard.Chess_Nums[2] > 0);
+	return total / chessboard.Chess_Nums[2];
 }
 
 
@@ -980,7 +1069,9 @@ double MyAI::estimatePlyTime(){
 	elapsed = (seconds*1000 + microseconds*1e-3);
 #endif
 
-	this->ply_time = min(MAX_PLY_TIME, (TOTAL_TIME - elapsed) / (EXPECT_PLYS - num_plys + 1));
+	this->ply_time = min(MAX_PLY_TIME, (TOTAL_TIME - elapsed) / max(1, EXPECT_PLYS - num_plys + 1));
+	assert(this->ply_time <= MAX_PLY_TIME);
+	assert(this->ply_time >= 0);
 	return this->ply_time;
 }
 
