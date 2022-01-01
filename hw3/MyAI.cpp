@@ -31,11 +31,16 @@
 #define TOTAL_TIME 900000.
 #define MAX_PLY_TIME 15000.
 #define EXPECT_PLYS 180 / 2
+// #define EXPECT_PLYS 300 / 2
 
 #define MAX_FLIPS_IN_SEARCH 2
+
 #define USE_TRANSPOSITION
+#define USE_ASPIRATION
 
 using namespace std;
+
+mt19937_64 rng;
 
 MyAI::MyAI(void){srand(time(NULL));}
 
@@ -191,7 +196,7 @@ MoveInfo::MoveInfo(const array<int, 32>& board, int from, int to){
 	}
 	else{
 		int from_id = (from_chess_no % 7)+1;
-		int noise = rand()%10;
+		int noise = rng()%10;
 		priority = (from_id*10 + noise) * PRIORITY_MOVE;
 	}
 }
@@ -303,6 +308,9 @@ void MyAI::initBoardState()
 	main_chessboard.History.reserve(1024);
 	num_plys = 0;
 
+	rng = ProperlySeededRandomEngine<mt19937_64>();
+	transTable.init(rng);
+
 	Pirnf_Chessboard();
 }
 
@@ -312,9 +320,37 @@ void MyAI::initBoardState(const char* data[])
 	assert(false);
 }
 
+void MyAI::openingMove(char move[6])
+{
+/* generateMove Call by reference: change src,dst */
+	unsigned long long flip = rng() % 32;
+
+	// replace the move and score
+	int StartPoint = flip;
+	int EndPoint   = flip;
+	sprintf(move, "%c%c-%c%c",'a'+(StartPoint%4),'1'+(7-StartPoint/4),'a'+(EndPoint%4),'1'+(7-EndPoint/4));
+	
+	char chess_Start[4]="";
+	char chess_End[4]="";
+	Pirnf_Chess(main_chessboard.Board[StartPoint],chess_Start);
+	Pirnf_Chess(main_chessboard.Board[EndPoint],chess_End);
+	printf("My result: \n--------------------------\n");
+	printf("Opening\n");
+	printf("(%d) -> (%d)\n",StartPoint,EndPoint);
+	printf("<%s> -> <%s>\n",chess_Start,chess_End);
+	printf("move:%s\n",move);
+	printf("--------------------------\n");
+	this->Pirnf_Chessboard();
+}
+
 void MyAI::generateMove(char move[6])
 {
 /* generateMove Call by reference: change src,dst */
+	if (this->Color == 2){
+		openingMove(move);
+		return;
+	}
+
 	int StartPoint = 0;
 	int EndPoint = 0;
 
@@ -340,8 +376,22 @@ void MyAI::generateMove(char move[6])
 	key128_t boardkey = this->transTable.compute_hash(this->main_chessboard);
 	this->transTable.clear_tables();
 
-	for(int depth = 3; !isTimeUp() && depth <= MAX_DEPTH; depth+=2){
-		// this->transTable.clear_tables();
+	// depth-3 search
+	this->node = 0;
+	MoveInfo best_move_tmp;
+	t = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, this->Color, 0, 3, -DBL_MAX, DBL_MAX);
+	StartPoint = best_move_tmp.from_location_no;
+	EndPoint   = best_move_tmp.to_location_no;
+	sprintf(move, "%c%c-%c%c",'a'+(StartPoint%4),'1'+(7-StartPoint/4),'a'+(EndPoint%4),'1'+(7-EndPoint/4));
+	double wall = this->ply_elapsed - prev_end;
+	prev_end = this->ply_elapsed;
+	expected = wall * 2;
+	fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s, Rank: %d, Wall: %1.3lf\n", (this->timeIsUp ? 'U' : 'D'),
+			3, node, t - OFFSET, move, best_move_tmp.priority, wall / 1000);
+	fflush(stderr);
+
+	// deeeper search
+	for(int depth = 4; !isTimeUp() && depth <= MAX_DEPTH && t - OFFSET < WIN; depth+=2){
 		if (this->ply_time - this->ply_elapsed < expected){
 			// will early stop -> give up now
 			fprintf(stderr, "Early stopped. Expected: %1.3lf, Remain: %1.3lf\n", expected / 1000, (this->ply_time - this->ply_elapsed) / 1000);
@@ -350,50 +400,44 @@ void MyAI::generateMove(char move[6])
 		}
 
 		this->node = 0;
-		MoveInfo best_move_tmp;
+		// MoveInfo best_move_tmp;
 		double t_tmp;
 
 		// run Nega-max
-		t_tmp = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, this->Color, 0, depth, -DBL_MAX, DBL_MAX);
-		t_tmp -= OFFSET; // rescale
+#ifdef USE_ASPIRATION
+		const double threshold = 0.005;
+#else
+		const double threshold = DBL_MAX - OFFSET;
+#endif
+		double alpha = t - threshold;
+		double beta = t + threshold;
+		t_tmp = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, this->Color, 0, depth, alpha, beta);
+
+		if (t_tmp <= alpha){ // failed low
+			t_tmp = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, this->Color, 0, depth, -DBL_MAX, t_tmp);
+		}
+		else if (t_tmp >= beta){ // failed high
+			t_tmp = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, this->Color, 0, depth, t_tmp, DBL_MAX);
+		}
 
 		// check score
 		// if search all nodes
 		// replace the move and score
-		if(!this->timeIsUp || depth == 3){
+		if(!this->timeIsUp){
 			t = t_tmp;
 			StartPoint = best_move_tmp.from_location_no;
 			EndPoint   = best_move_tmp.to_location_no;
 			sprintf(move, "%c%c-%c%c",'a'+(StartPoint%4),'1'+(7-StartPoint/4),'a'+(EndPoint%4),'1'+(7-EndPoint/4));
 		}else {best_move_tmp.priority = -1;}
-		// U: Undone
-		// D: Done
+
 		double wall = this->ply_elapsed - prev_end;
 		prev_end = this->ply_elapsed;
 		expected = wall * 2;
-
-		// depth_wall[depth].add(wall);
-		// if (depth > 3){
-		// 	double prev_time = depth_wall[depth - 2].mean();
-		// 	double cur_time = depth_wall[depth].mean();
-
-		// 	double prev_std = depth_wall[depth - 2].std(prev_time);
-		// 	double cur_std = depth_wall[depth].std(cur_time);
-		// 	const double error = 1000; // ms
-		// 	if(prev_time > 0 && prev_std < error && cur_time > 0 && cur_std < error){
-		// 		// cur_time -= cur_std;
-		// 		expected = cur_time / prev_time * cur_time;
-		// 	}
-		// }
-
+		// U: Undone
+		// D: Done
 		fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s, Rank: %d, Wall: %1.3lf\n", (this->timeIsUp ? 'U' : 'D'),
-			depth, node, t, move, best_move_tmp.priority, wall / 1000);
+			depth, node, t - OFFSET, move, best_move_tmp.priority, wall / 1000);
 		fflush(stderr);
-
-		// game finish !!!
-		if(t >= WIN){
-			break;
-		}
 	}
 	
 	char chess_Start[4]="";
@@ -788,13 +832,12 @@ bool MyAI::Referee(const array<int, 32>& chess, const int from_location_no, cons
 			IsCurrent = false;
 		}
 	}
-	int fail_no;
-	assert(Referee_debug(chess, from_location_no, to_location_no, UserId, &fail_no) == IsCurrent);
+	assert(Referee_debug(chess, from_location_no, to_location_no, UserId, nullptr) == IsCurrent);
 	return IsCurrent;
 }
 bool MyAI::Referee_debug(const std::array<int, 32>& chess, const int from_location_no, const int to_location_no, const int UserId, int *fail_no)
 {
-	// int MessageNo = 0;
+	int MessageNo = 0;
 	bool IsCurrent = true;
 	int from_chess_no = chess[from_location_no];
 	int to_chess_no = chess[to_location_no];
@@ -805,25 +848,22 @@ bool MyAI::Referee_debug(const std::array<int, 32>& chess, const int from_locati
 
 	if(from_chess_no < 0 || ( to_chess_no < 0 && to_chess_no != CHESS_EMPTY) )
 	{  
-		// MessageNo = 1;
+		MessageNo = 1;
 		//strcat(Message,"**no chess can move**");
 		//strcat(Message,"**can't move darkchess**");
 		IsCurrent = false;
-		*fail_no = 0;
 	}
 	else if (from_chess_no >= 0 && from_chess_no / 7 != UserId)
 	{
-		// MessageNo = 2;
+		MessageNo = 2;
 		//strcat(Message,"**not my chess**");
 		IsCurrent = false;
-		*fail_no = 1;
 	}
 	else if((from_chess_no / 7 == to_chess_no / 7) && to_chess_no >= 0)
 	{
-		// MessageNo = 3;
+		MessageNo = 3;
 		//strcat(Message,"**can't eat my self**");
 		IsCurrent = false;
-		*fail_no = 2;
 	}
 	//check attack
 	else if(to_chess_no == CHESS_EMPTY && abs(from_row-to_row) + abs(from_col-to_col)  == 1)//legal move
@@ -870,26 +910,23 @@ bool MyAI::Referee_debug(const std::array<int, 32>& chess, const int from_locati
 			
 			if(between_Count != 1 )
 			{
-				// MessageNo = 4;
+				MessageNo = 4;
 				//strcat(Message,"**gun can't eat opp without between one piece**");
 				IsCurrent = false;
-				*fail_no = 3;
 			}
 			else if(to_chess_no == CHESS_EMPTY)
 			{
-				// MessageNo = 5;
+				MessageNo = 5;
 				//strcat(Message,"**gun can't eat opp without between one piece**");
 				IsCurrent = false;
-				*fail_no = 4;
 			}
 		}
 		//slide
 		else
 		{
-			// MessageNo = 6;
+			MessageNo = 6;
 			//strcat(Message,"**cant slide**");
 			IsCurrent = false;
-			*fail_no = 5;
 		}
 	}
 	else // non gun
@@ -899,38 +936,36 @@ bool MyAI::Referee_debug(const std::array<int, 32>& chess, const int from_locati
 		//distance
 		if( abs(from_row-to_row) + abs(from_col-to_col)  > 1)
 		{
-			// MessageNo = 7;
+			MessageNo = 7;
 			//strcat(Message,"**cant eat**");
 			IsCurrent = false;
-			*fail_no = 6;
 		}
 		//judge pawn
 		else if(from_chess_no % 7 == 0)
 		{
 			if(to_chess_no % 7 != 0 && to_chess_no % 7 != 6)
 			{
-				// MessageNo = 8;
+				MessageNo = 8;
 				//strcat(Message,"**pawn only eat pawn and king**");
 				IsCurrent = false;
-				*fail_no = 7;
 			}
 		}
 		//judge king
 		else if(from_chess_no % 7 == 6 && to_chess_no % 7 == 0)
 		{
-			// MessageNo = 9;
+			MessageNo = 9;
 			//strcat(Message,"**king can't eat pawn**");
 			IsCurrent = false;
-			*fail_no = 8;
 		}
 		else if(from_chess_no % 7 < to_chess_no% 7)
 		{
-			// MessageNo = 10;
+			MessageNo = 10;
 			//strcat(Message,"**cant eat**");
 			IsCurrent = false;
-			*fail_no = 9;
 		}
 	}
+	if (fail_no != nullptr)
+		*fail_no = MessageNo;
 	return IsCurrent;
 }
 
@@ -1092,14 +1127,16 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 		if (entry.rdepth >= remain_depth){
 			if (entry.vtype == ENTRY_EXACT){
 				MoveInfo& mv = entry.child_move;
-				int fail_no;
-				if((mv.from_location_no != mv.to_location_no) && 
-				!Referee_debug(chessboard.Board, mv.from_location_no, mv.to_location_no, color, &fail_no)){
-					Pirnf_Chessboard();
-					printf("move: %d->%d, fail: %d\n", mv.from_location_no, mv.to_location_no, fail_no);
-					fflush(stdout);
-					exit(1);
-				}
+				assert((mv.from_location_no == mv.to_location_no) ||
+				Referee_debug(chessboard.Board, mv.from_location_no, mv.to_location_no, color, nullptr));
+				// int fail_no;
+				// if((mv.from_location_no != mv.to_location_no) && 
+				// !Referee_debug(chessboard.Board, mv.from_location_no, mv.to_location_no, color, &fail_no)){
+				// 	Pirnf_Chessboard();
+				// 	printf("move: %d->%d, fail: %d\n", mv.from_location_no, mv.to_location_no, fail_no);
+				// 	fflush(stdout);
+				// 	exit(1);
+				// }
 				move = mv;
 				return entry.value;
 			}

@@ -1,5 +1,5 @@
 // #include <tsl/robin_map.h>
-#include <random>
+
 #include "MyAI.h"
 
 // class TransPosition{
@@ -9,20 +9,7 @@
 // 	array<robin_map<key128_t, TableEntry>, 2> tables;
 // public:
 
-/* courtesy https://codereview.stackexchange.com/questions/109260/seed-stdmt19937-from-stdrandom-device */
-template<class T = std::mt19937, std::size_t N = T::state_size * sizeof(typename T::result_type)>
-auto ProperlySeededRandomEngine () -> typename std::enable_if<N, T>::type {
-    std::random_device source;
-    std::random_device::result_type random_data[(N - 1) / sizeof(source()) + 1];
-    std::generate(std::begin(random_data), std::end(random_data), std::ref(source));
-    std::seed_seq seeds(std::begin(random_data), std::end(random_data));
-    return T(seeds);
-}
-
-TransPosition::TransPosition(){
-
-    auto rng = ProperlySeededRandomEngine<mt19937_64>();
-
+void TransPosition::init(mt19937_64& rng){
     for (uint i = 0; i < salt.size(); i++){
         uint64_t lo = rng();
         uint64_t hi = rng();

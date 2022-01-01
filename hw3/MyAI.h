@@ -21,6 +21,16 @@
 
 using namespace std;
 
+/* courtesy of https://codereview.stackexchange.com/questions/109260/seed-stdmt19937-from-stdrandom-device */
+template<class T = std::mt19937, std::size_t N = T::state_size * sizeof(typename T::result_type)>
+auto ProperlySeededRandomEngine () -> typename std::enable_if<N, T>::type {
+    std::random_device source;
+    std::random_device::result_type random_data[(N - 1) / sizeof(source()) + 1];
+    std::generate(std::begin(random_data), std::end(random_data), std::ref(source));
+    std::seed_seq seeds(std::begin(random_data), std::end(random_data));
+    return T(seeds);
+}
+
 class ChessBoard{
 public:
 	array<int, 32> Board;
@@ -71,7 +81,7 @@ class TransPosition{
 	array<tsl::robin_map<key128_t, TableEntry>, 2> tables;
 	// array<unordered_map<key128_t, TableEntry>, 2> tables;
 public:
-	TransPosition();
+	void init(mt19937_64& rng);
 	static inline int Convert(int chess);
 	key128_t compute_hash(const ChessBoard& chessboard) const;
 	key128_t MakeMove(const key128_t& other, const MoveInfo& move, const int chess = 0) const;
@@ -159,6 +169,7 @@ private:
 	void initBoardState();
 	void initBoardState(const char* data[]);
 	void generateMove(char move[6]);
+	void openingMove(char move[6]);
 	void MakeMove(ChessBoard* chessboard, const int move, const int chess);
 	void MakeMove(ChessBoard* chessboard, const char move[6]);
 	bool Referee(const array<int, 32>& board, const int Startoint, const int EndPoint, const int color);
