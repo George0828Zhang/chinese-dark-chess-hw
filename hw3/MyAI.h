@@ -30,6 +30,7 @@ public:
 	array<int, 14> AliveChess;
 	array<int, 3> Heads;
 	array<int, 3> Chess_Nums;
+	array<bool, 2> cantWin;
 
 	int NoEatFlip;
 	vector<int> History;
@@ -57,7 +58,8 @@ class TableEntry{
 public:
 	// key128_t p;
 	double value;
-	int depth;
+	// int depth;
+	int rdepth;
 	int vtype;
 	MoveInfo child_move;
 };
@@ -168,6 +170,7 @@ private:
 	double Star0_EQU(const ChessBoard& chessboard, const key128_t& boardkey, const MoveInfo& move, const vector<int>& Choice, const int color, const int depth, const int remain_depth);
 	// double SEE(const ChessBoard *chessboard, const int position, const int color);
 	bool isDraw(const ChessBoard* chessboard);
+	void moveOrdering(const key128_t& boardkey, vector<MoveInfo>& Moves, const int depth);
 
 	bool isTimeUp();
 	double estimatePlyTime();

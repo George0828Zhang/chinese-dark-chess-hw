@@ -79,7 +79,8 @@ bool TransPosition::insert(const key128_t& key, const int color, const TableEntr
         return true;
     }		
     TableEntry& entry = tables[color][key];
-    if (update.vtype == ENTRY_EXACT && update.depth >= entry.depth){
+    // if (update.vtype == ENTRY_EXACT && update.depth >= entry.depth){
+    if (update.vtype == ENTRY_EXACT && update.rdepth >= entry.rdepth){
         entry = update;
         return true;
     }
