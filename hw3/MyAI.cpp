@@ -9,7 +9,7 @@
 #include <cmath>
 #include <cassert>
 
-// #define NOASSERT
+#define NOASSERT
 #ifdef NOASSERT
 #undef assert
 #define assert(x) ((void)0)
@@ -33,6 +33,7 @@
 #define EXPECT_PLYS 180 / 2
 
 #define MAX_FLIPS_IN_SEARCH 2
+#define USE_TRANSPOSITION
 
 using namespace std;
 
@@ -193,12 +194,12 @@ MoveInfo::MoveInfo(const array<int, 32>& board, int from, int to){
 		priority = (from_id*10 + noise) * PRIORITY_MOVE;
 	}
 }
-bool operator < (const MoveInfo& c1, const MoveInfo& c2){
-    return c1.priority < c2.priority;
-}
+// bool operator < (const MoveInfo& c1, const MoveInfo& c2){
+//     return c1.priority < c2.priority;
+// }
 void moveOrdering(vector<MoveInfo>& Moves){
-	// sort(Moves.begin(), Moves.end(), [](const MoveInfo& a, const MoveInfo& b) {return a.priority > b.priority;});
-	make_heap(Moves.begin(), Moves.end());
+	sort(Moves.begin(), Moves.end(), [](const MoveInfo& a, const MoveInfo& b) {return a.priority > b.priority;});
+	// make_heap(Moves.begin(), Moves.end());
 }
 
 // *********************** AI FUNCTION *********************** //
@@ -321,9 +322,10 @@ void MyAI::generateMove(char move[6])
 	double expected = 0;
 	double prev_end = 0;
 
-	// this->transTable.clear_tables();
+	key128_t boardkey = this->transTable.compute_hash(this->main_chessboard);
 
 	for(int depth = 3; !isTimeUp() && depth <= MAX_DEPTH; depth+=2){
+		this->transTable.clear_tables();
 		if (this->ply_time - this->ply_elapsed < expected){
 			// will early stop -> give up now
 			fprintf(stderr, "Early stopped. Expected: %1.3lf, Remain: %1.3lf\n", expected / 1000, (this->ply_time - this->ply_elapsed) / 1000);
@@ -336,7 +338,7 @@ void MyAI::generateMove(char move[6])
 		double t_tmp;
 
 		// run Nega-max
-		t_tmp = Nega_scout(this->main_chessboard, best_move_tmp, this->Color, 0, depth, -DBL_MAX, DBL_MAX);
+		t_tmp = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, this->Color, 0, depth, -DBL_MAX, DBL_MAX);
 		t_tmp -= OFFSET; // rescale
 
 		// check score
@@ -352,7 +354,7 @@ void MyAI::generateMove(char move[6])
 		// D: Done
 		double wall = this->ply_elapsed - prev_end;
 		prev_end = this->ply_elapsed;
-		expected = wall;
+		expected = wall * 2;
 
 		// depth_wall[depth].add(wall);
 		// if (depth > 3){
@@ -1024,7 +1026,37 @@ double MyAI::Evaluate(const ChessBoard* chessboard,
 	return score;
 }
 
-double MyAI::Nega_scout(const ChessBoard chessboard, MoveInfo& move, const int color, const int depth, const int remain_depth, const double alpha, const double beta){
+double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, MoveInfo& move, const int color, const int depth, const int remain_depth, double alpha, double beta){
+
+	// check table
+	TransPosition& table = this->transTable;
+	TableEntry entry;
+#ifdef USE_TRANSPOSITION
+	if(color < 2 && table.query(boardkey, color, entry)){
+		// hash hit
+		if (entry.depth >= depth){
+			if (entry.vtype == ENTRY_EXACT){
+				MoveInfo& mv = entry.child_move;
+				int fail_no;
+				if((mv.from_location_no != mv.to_location_no) && 
+				!Referee_debug(chessboard.Board, mv.from_location_no, mv.to_location_no, color, &fail_no)){
+					Pirnf_Chessboard();
+					printf("move: %d->%d, fail: %d\n", mv.from_location_no, mv.to_location_no, fail_no);
+					fflush(stdout);
+					exit(1);
+				}
+				move = mv;
+				return entry.value;
+			}
+			else if (entry.vtype == ENTRY_LOWER){
+				alpha = max(alpha, entry.value);
+			}
+			else{
+				beta = min(beta, entry.value);
+			}
+		}
+	}
+#endif
 
 	int move_count = 0, flip_count = 0;
 
@@ -1084,55 +1116,92 @@ double MyAI::Nega_scout(const ChessBoard chessboard, MoveInfo& move, const int c
 		// search deeper
 		for(int i = 0; i < move_count; i++){ // move
 			ChessBoard new_chessboard = chessboard;
-			
 			MakeMove(&new_chessboard, Moves[i].num, 0); // 0: dummy
-			double t = -Nega_scout(new_chessboard, new_move, color^1, depth+1, remain_depth-1, -n, -max(alpha, m));
-			bool draw_penalize = (color == this->Color) && isDraw(&new_chessboard);
-			if (draw_penalize){
-				t -= WIN;
-			}
+			key128_t new_boardkey = table.MakeMove(boardkey, Moves[i], 0);
+			double t = -Nega_scout(new_chessboard, new_boardkey, new_move, color^1, depth+1, remain_depth-1, -n, -max(alpha, m));
+			
 			if(t > m){ 
 				if (n == beta || remain_depth < 3 || t >= beta){
 					m = t;
 					move = Moves[i];
 				}
 				else{
-					m = -Nega_scout(new_chessboard, new_move, color^1, depth+1, remain_depth-1, -beta, -t);
-					if (draw_penalize)
-						m -= WIN;
+					m = -Nega_scout(new_chessboard, new_boardkey, new_move, color^1, depth+1, remain_depth-1, -beta, -t);
 					move = Moves[i];
 				}
 			}
-			if (m >= beta) return m; 
+			if (m >= beta){
+				// record the hash entry as a lower bound
+#ifdef USE_TRANSPOSITION
+				if (color < 2){
+					entry.value = m;
+					entry.depth = depth;
+					entry.vtype = ENTRY_LOWER;
+					entry.child_move = Moves[i];
+					table.insert(boardkey, color, entry);
+				}
+#endif
+				return m;
+			}
 			n = max(alpha, m) + 1;
 		}
 
 		// chance nodes
 		for(int i = move_count; i < move_count + flip_count; i++){ // flip
 			// calculate the expect value of flip
-			double t = Star0_EQU(chessboard, Moves[i], Choice, color, depth, remain_depth);
+			double t = Star0_EQU(chessboard, boardkey, Moves[i], Choice, color, depth, remain_depth);
 
 			if(t > m){ 
 				m = t;
 				move = Moves[i];
 			}
-			if (m >= beta) return m;
+			if (m >= beta){
+				// record the hash entry as a lower bound
+#ifdef USE_TRANSPOSITION
+				if (color < 2){
+					entry.value = m;
+					entry.depth = depth;
+					entry.vtype = ENTRY_LOWER;
+					entry.child_move = Moves[i];
+					table.insert(boardkey, color, entry);
+				}
+#endif
+				return m;
+			}
 		}
+
+#ifdef USE_TRANSPOSITION
+		if (color < 2){
+			if (m > alpha){
+				// record the hash entry as an exact value m
+				entry.vtype = ENTRY_EXACT;
+			}
+			else{
+				// record the hash entry as an upper bound m;
+				entry.vtype = ENTRY_UPPER;
+			}
+			entry.value = m;
+			entry.depth = depth;
+			entry.child_move = move;
+			table.insert(boardkey, color, entry);
+		}
+#endif
 		return m;
 	}
 }
 
-double MyAI::Star0_EQU(const ChessBoard& chessboard, const MoveInfo& move, const vector<int>& Choice, const int color, const int depth, const int remain_depth){
+double MyAI::Star0_EQU(const ChessBoard& chessboard, const key128_t& boardkey, const MoveInfo& move, const vector<int>& Choice, const int color, const int depth, const int remain_depth){
+	TransPosition& table = this->transTable;
 	MoveInfo new_move;
 	double total = 0;
 	for(auto& k: Choice){
 		ChessBoard new_chessboard = chessboard;
-		
+		key128_t new_boardkey = table.MakeMove(boardkey, move, k);
 		MakeMove(&new_chessboard, move.num, k);
 
 		int next_col = (color == 2) ? ((k / 7)^1) : (color^1);
 
-		double t = -Nega_scout(new_chessboard, new_move, next_col, depth+1, remain_depth-3, -DBL_MAX, DBL_MAX);
+		double t = -Nega_scout(new_chessboard, new_boardkey, new_move, next_col, depth+1, remain_depth-3, -DBL_MAX, DBL_MAX);
 		total += chessboard.CoverChess[k] * t;
 	}
 	assert(chessboard.Chess_Nums[2] > 0);

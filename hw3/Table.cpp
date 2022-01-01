@@ -9,19 +9,23 @@
 // 	array<robin_map<key128_t, TableEntry>, 2> tables;
 // public:
 
+/* courtesy https://codereview.stackexchange.com/questions/109260/seed-stdmt19937-from-stdrandom-device */
+template<class T = std::mt19937, std::size_t N = T::state_size * sizeof(typename T::result_type)>
+auto ProperlySeededRandomEngine () -> typename std::enable_if<N, T>::type {
+    std::random_device source;
+    std::random_device::result_type random_data[(N - 1) / sizeof(source()) + 1];
+    std::generate(std::begin(random_data), std::end(random_data), std::ref(source));
+    std::seed_seq seeds(std::begin(random_data), std::end(random_data));
+    return T(seeds);
+}
+
 TransPosition::TransPosition(){
-    /* Seed */
-    std::random_device rd;
 
-    /* Random number generator */
-    std::default_random_engine generator(rd());
-
-    /* Distribution on which to apply the generator */
-    std::uniform_int_distribution<unsigned long long> distribution(0,0xFFFFFFFFFFFFFFFF);
+    auto rng = ProperlySeededRandomEngine<mt19937_64>();
 
     for (uint i = 0; i < salt.size(); i++){
-        unsigned long long lo = distribution(generator);
-        unsigned long long hi = distribution(generator);
+        uint64_t lo = rng();
+        uint64_t hi = rng();
         salt[i] = lo + ((key128_t)hi << 64);
     }
 }
@@ -63,10 +67,10 @@ key128_t TransPosition::MakeMove(const key128_t& other, const MoveInfo& move, co
     }
     return out;
 }
-bool TransPosition::query(const key128_t& key, const int color, TableEntry* result) {
+bool TransPosition::query(const key128_t& key, const int color, TableEntry& result) {
     if(tables[color].count(key) == 0)
         return false;
-    *result = tables[color][key];
+    result = tables[color][key];
     return true;
 }
 bool TransPosition::insert(const key128_t& key, const int color, const TableEntry& update){

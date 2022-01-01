@@ -73,7 +73,7 @@ public:
 	static inline int Convert(int chess);
 	key128_t compute_hash(const ChessBoard& chessboard) const;
 	key128_t MakeMove(const key128_t& other, const MoveInfo& move, const int chess = 0) const;
-	bool query(const key128_t& key, const int color, TableEntry* result);
+	bool query(const key128_t& key, const int color, TableEntry& result);
 	bool insert(const key128_t& key, const int color, const TableEntry& update);
 	void clear_tables();
 };
@@ -164,8 +164,8 @@ private:
 	void Expand(const ChessBoard *chessboard, const int color, vector<MoveInfo> &Result);
 	// double Evaluate(const ChessBoard* chessboard, const int legal_move_count, const int color);
 	double Evaluate(const ChessBoard *chessboard, const vector<MoveInfo> &Moves, const int color);
-	double Nega_scout(const ChessBoard chessboard, MoveInfo& move, const int color, const int depth, const int remain_depth, const double alpha, const double beta);
-	double Star0_EQU(const ChessBoard& chessboard, const MoveInfo& move, const vector<int>& Choice, const int color, const int depth, const int remain_depth);
+	double Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, MoveInfo& move, const int color, const int depth, const int remain_depth, const double alpha, const double beta);
+	double Star0_EQU(const ChessBoard& chessboard, const key128_t& boardkey, const MoveInfo& move, const vector<int>& Choice, const int color, const int depth, const int remain_depth);
 	// double SEE(const ChessBoard *chessboard, const int position, const int color);
 	bool isDraw(const ChessBoard* chessboard);
 
