@@ -9,6 +9,9 @@
 #include <stdint.h>
 #include <array>
 #include <vector>
+#include <tsl/robin_map.h>
+#include <unordered_map>
+#include <random>
 
 #define RED 0
 #define BLACK 1
@@ -40,36 +43,41 @@ public:
 	int to_location_no;
 	int priority;
 	int num;
+	MoveInfo(){}
 	MoveInfo(const array<int, 32>& board, int from, int to);
-	friend bool operator > (const MoveInfo& l, const MoveInfo& r);
 };
 
-// class WallHistory{
-// 	array<double, 5> wall;
-// 	double wall_sum, wall_sum2;
-// 	int history;
-// 	int capacity;
-// public:
-// 	WallHistory():wall_sum(0),wall_sum2(0),history(0),capacity(wall.size()){}
-// 	int add(double w){
-// 		int index = history % capacity;
-// 		if(history >= capacity){
-// 			wall_sum -= wall[index];
-// 			wall_sum2 -= wall[index]*wall[index];
-// 		}
-// 		wall[index] = w;
-// 		wall_sum += w;
-// 		wall_sum2 += w*w;
-// 		history++;
-// 		return history;
-// 	}
-// 	double mean(){
-// 		return history < capacity ? 0 : (wall_sum / capacity);
-// 	}
-// 	double std(double mu){
-// 		return history < capacity ? 0 : sqrt(wall_sum2 / capacity - mu*mu);
-// 	}
-// };
+#define ENTRY_EXACT 0
+#define ENTRY_LOWER 1
+#define ENTRY_UPPER 2
+
+using key128_t = __uint128_t;
+
+class TableEntry{
+public:
+	// key128_t p;
+	double value;
+	int depth;
+	int vtype;
+	MoveInfo child_move;
+};
+
+class TransPosition{
+	static const int POSITIONS = 32; 
+	static const int TYPES = 15;
+	array<key128_t, POSITIONS*TYPES> salt; // 32 pos, 14+1 types
+	array<tsl::robin_map<key128_t, TableEntry>, 2> tables;
+	// array<unordered_map<key128_t, TableEntry>, 2> tables;
+public:
+	TransPosition();
+	static inline int Convert(int chess);
+	key128_t compute_hash(const ChessBoard& chessboard) const;
+	key128_t MakeMove(const key128_t& other, const MoveInfo& move, const int chess = 0) const;
+	bool query(const key128_t& key, const int color, TableEntry* result);
+	bool insert(const key128_t& key, const int color, const TableEntry& update);
+	void clear_tables();
+};
+
 
 class MyAI  
 {
@@ -140,7 +148,6 @@ private:
 
 	// statistics
 	int node;
-	// array<WallHistory, 34> depth_wall;
 
 	// Utils
 	int GetFin(char c);
@@ -157,8 +164,8 @@ private:
 	void Expand(const ChessBoard *chessboard, const int color, vector<MoveInfo> &Result);
 	// double Evaluate(const ChessBoard* chessboard, const int legal_move_count, const int color);
 	double Evaluate(const ChessBoard *chessboard, const vector<MoveInfo> &Moves, const int color);
-	double Nega_scout(const ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth, const double alpha, const double beta);
-	double Star0_EQU(const ChessBoard& chessboard, int move, const vector<int>& Choice, const int color, const int depth, const int remain_depth);
+	double Nega_scout(const ChessBoard chessboard, MoveInfo& move, const int color, const int depth, const int remain_depth, const double alpha, const double beta);
+	double Star0_EQU(const ChessBoard& chessboard, const MoveInfo& move, const vector<int>& Choice, const int color, const int depth, const int remain_depth);
 	// double SEE(const ChessBoard *chessboard, const int position, const int color);
 	bool isDraw(const ChessBoard* chessboard);
 
@@ -168,7 +175,8 @@ private:
 	// Display
 	void Pirnf_Chess(int chess_no,char *Result);
 	void Pirnf_Chessboard();
-	
+
+	TransPosition transTable;
 };
 
 #endif

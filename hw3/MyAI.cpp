@@ -9,7 +9,7 @@
 #include <cmath>
 #include <cassert>
 
-#define NOASSERT
+// #define NOASSERT
 #ifdef NOASSERT
 #undef assert
 #define assert(x) ((void)0)
@@ -321,6 +321,8 @@ void MyAI::generateMove(char move[6])
 	double expected = 0;
 	double prev_end = 0;
 
+	// this->transTable.clear_tables();
+
 	for(int depth = 3; !isTimeUp() && depth <= MAX_DEPTH; depth+=2){
 		if (this->ply_time - this->ply_elapsed < expected){
 			// will early stop -> give up now
@@ -330,10 +332,11 @@ void MyAI::generateMove(char move[6])
 		}
 
 		this->node = 0;
-		int best_move_tmp; double t_tmp;
+		MoveInfo best_move_tmp;
+		double t_tmp;
 
 		// run Nega-max
-		t_tmp = Nega_scout(this->main_chessboard, &best_move_tmp, this->Color, 0, depth, -DBL_MAX, DBL_MAX);
+		t_tmp = Nega_scout(this->main_chessboard, best_move_tmp, this->Color, 0, depth, -DBL_MAX, DBL_MAX);
 		t_tmp -= OFFSET; // rescale
 
 		// check score
@@ -341,8 +344,8 @@ void MyAI::generateMove(char move[6])
 		// replace the move and score
 		if(!this->timeIsUp || depth == 3){
 			t = t_tmp;
-			StartPoint = best_move_tmp/100;
-			EndPoint   = best_move_tmp%100;
+			StartPoint = best_move_tmp.from_location_no;
+			EndPoint   = best_move_tmp.to_location_no;
 			sprintf(move, "%c%c-%c%c",'a'+(StartPoint%4),'1'+(7-StartPoint/4),'a'+(EndPoint%4),'1'+(7-EndPoint/4));
 		}
 		// U: Undone
@@ -1021,7 +1024,7 @@ double MyAI::Evaluate(const ChessBoard* chessboard,
 	return score;
 }
 
-double MyAI::Nega_scout(const ChessBoard chessboard, int* move, const int color, const int depth, const int remain_depth, const double alpha, const double beta){
+double MyAI::Nega_scout(const ChessBoard chessboard, MoveInfo& move, const int color, const int depth, const int remain_depth, const double alpha, const double beta){
 
 	int move_count = 0, flip_count = 0;
 
@@ -1077,13 +1080,13 @@ double MyAI::Nega_scout(const ChessBoard chessboard, int* move, const int color,
 	}else{
 		double m = -DBL_MAX;
 		double n = beta;
-		int new_move;
+		MoveInfo new_move;
 		// search deeper
 		for(int i = 0; i < move_count; i++){ // move
 			ChessBoard new_chessboard = chessboard;
 			
 			MakeMove(&new_chessboard, Moves[i].num, 0); // 0: dummy
-			double t = -Nega_scout(new_chessboard, &new_move, color^1, depth+1, remain_depth-1, -n, -max(alpha, m));
+			double t = -Nega_scout(new_chessboard, new_move, color^1, depth+1, remain_depth-1, -n, -max(alpha, m));
 			bool draw_penalize = (color == this->Color) && isDraw(&new_chessboard);
 			if (draw_penalize){
 				t -= WIN;
@@ -1091,13 +1094,13 @@ double MyAI::Nega_scout(const ChessBoard chessboard, int* move, const int color,
 			if(t > m){ 
 				if (n == beta || remain_depth < 3 || t >= beta){
 					m = t;
-					*move = Moves[i].num;
+					move = Moves[i];
 				}
 				else{
-					m = -Nega_scout(new_chessboard, &new_move, color^1, depth+1, remain_depth-1, -beta, -t);
+					m = -Nega_scout(new_chessboard, new_move, color^1, depth+1, remain_depth-1, -beta, -t);
 					if (draw_penalize)
 						m -= WIN;
-					*move = Moves[i].num;
+					move = Moves[i];
 				}
 			}
 			if (m >= beta) return m; 
@@ -1107,11 +1110,11 @@ double MyAI::Nega_scout(const ChessBoard chessboard, int* move, const int color,
 		// chance nodes
 		for(int i = move_count; i < move_count + flip_count; i++){ // flip
 			// calculate the expect value of flip
-			double t = Star0_EQU(chessboard, Moves[i].num, Choice, color, depth, remain_depth);
+			double t = Star0_EQU(chessboard, Moves[i], Choice, color, depth, remain_depth);
 
 			if(t > m){ 
 				m = t;
-				*move = Moves[i].num;
+				move = Moves[i];
 			}
 			if (m >= beta) return m;
 		}
@@ -1119,17 +1122,17 @@ double MyAI::Nega_scout(const ChessBoard chessboard, int* move, const int color,
 	}
 }
 
-double MyAI::Star0_EQU(const ChessBoard& chessboard, int move, const vector<int>& Choice, const int color, const int depth, const int remain_depth){
-	int new_move;
+double MyAI::Star0_EQU(const ChessBoard& chessboard, const MoveInfo& move, const vector<int>& Choice, const int color, const int depth, const int remain_depth){
+	MoveInfo new_move;
 	double total = 0;
 	for(auto& k: Choice){
 		ChessBoard new_chessboard = chessboard;
 		
-		MakeMove(&new_chessboard, move, k);
+		MakeMove(&new_chessboard, move.num, k);
 
 		int next_col = (color == 2) ? ((k / 7)^1) : (color^1);
 
-		double t = -Nega_scout(new_chessboard, &new_move, next_col, depth+1, remain_depth-3, -DBL_MAX, DBL_MAX);
+		double t = -Nega_scout(new_chessboard, new_move, next_col, depth+1, remain_depth-3, -DBL_MAX, DBL_MAX);
 		total += chessboard.CoverChess[k] * t;
 	}
 	assert(chessboard.Chess_Nums[2] > 0);
