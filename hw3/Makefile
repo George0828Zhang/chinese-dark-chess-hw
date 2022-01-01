@@ -32,6 +32,7 @@ MAIN_OBJ := $(OBJ_FOLDER)/$(MAIN).o
 AI := MyAI
 AI_FILE := $(AI).cpp
 AI_HEADER := $(AI).h
+AI_FLAG := 
 AI_OBJ := $(OBJ_FOLDER)/$(AI).o
 
 TABLE := Table
@@ -46,7 +47,7 @@ $(TABLE_OBJ) : $(TABLE_FILE) $(TABLE_HEADER)
 
 $(AI_OBJ) : $(AI_FILE) $(AI_HEADER) 
 	$(MAKE_FOLDER)
-	$(G_PLUS_PLUS) -c $(AI_FILE) $(OS_DEFINE) -o $(AI_OBJ)
+	$(G_PLUS_PLUS) -c $(AI_FILE) $(OS_DEFINE) $(AI_FLAG) -o $(AI_OBJ)
 
 $(EXEC) : $(TABLE_OBJ) $(AI_OBJ) $(MAIN_FILE)
 	$(MAKE_FOLDER)
@@ -55,6 +56,9 @@ $(EXEC) : $(TABLE_OBJ) $(AI_OBJ) $(MAIN_FILE)
 
 # target
 final : $(EXEC)
+
+fast : AI_FLAG = -DFAST
+fast : final
 
 # clean object files and executable file
 .PHONY: clean

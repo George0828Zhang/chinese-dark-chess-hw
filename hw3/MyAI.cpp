@@ -30,8 +30,12 @@
 
 #define TOTAL_TIME 900000.
 #define MAX_PLY_TIME 15000.
+
+#ifdef FAST
+#define EXPECT_PLYS 300 / 2
+#else
 #define EXPECT_PLYS 180 / 2
-// #define EXPECT_PLYS 300 / 2
+#endif
 
 #define MAX_FLIPS_IN_SEARCH 2
 
