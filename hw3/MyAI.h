@@ -52,7 +52,9 @@ public:
 	int to_chess_no;
 	int from_location_no;
 	int to_location_no;
+	int raw_priority;
 	int priority;
+	int rank;
 	int num;
 	MoveInfo(){}
 	MoveInfo(const array<int, 32>& board, int from, int to);
@@ -72,6 +74,8 @@ public:
 	int rdepth;
 	int vtype;
 	MoveInfo child_move;
+	vector<MoveInfo> all_moves;
+	vector<int> flip_choices;
 };
 
 class TransPosition{
