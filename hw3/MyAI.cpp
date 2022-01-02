@@ -9,7 +9,7 @@
 #include <cmath>
 #include <cassert>
 
-// #define NOASSERT
+#define NOASSERT
 #ifdef NOASSERT
 #undef assert
 #define assert(x) ((void)0)
@@ -43,6 +43,7 @@
 #define USE_ASPIRATION
 #define USE_SEARCH_EXTENSION
 
+#define RANDOM_WALK
 #define DISTANCE
 
 using namespace std;
@@ -117,6 +118,7 @@ bool MyAI::num_moves_to_draw(const char* data[], char* response){
 bool MyAI::move(const char* data[], char* response){
   char move[6];
 	sprintf(move, "%s-%s", data[0], data[1]);
+	this->lag_chessboard = this->main_chessboard;
 	this->MakeMove(&(this->main_chessboard), move);
 	return 0;
 }
@@ -124,6 +126,7 @@ bool MyAI::move(const char* data[], char* response){
 bool MyAI::flip(const char* data[], char* response){
   char move[6];
 	sprintf(move, "%s(%s)", data[0], data[1]);
+	this->lag_chessboard = this->main_chessboard;
 	this->MakeMove(&(this->main_chessboard), move);
 	return 0;
 }
@@ -203,7 +206,10 @@ MoveInfo::MoveInfo(const array<int, 32>& board, int from, int to){
 	}
 	else{
 		int from_id = (from_chess_no % 7)+1;
-		int noise = rng()%10;
+		int noise = 0;
+#ifdef RANDOM_WALK
+		noise = rng()%10;
+#endif
 		raw_priority = (from_id*10 + noise) * PRIORITY_MOVE;
 	}
 	priority = raw_priority;
@@ -340,6 +346,47 @@ void MyAI::openingMove(char move[6])
 	this->Pirnf_Chessboard();
 }
 
+void MyAI::moveStealing(){
+	/* get the previos move from opponent, and store it into transposition table */
+		// check table
+	key128_t key_before = this->transTable.compute_hash(this->lag_chessboard);
+
+	// figure out which move is made by opponent
+	int move_id = this->main_chessboard.History.back();	
+	MoveInfo chosenMove(this->lag_chessboard.Board, move_id/100, move_id%100);
+
+	TransPosition& table = this->transTable;
+	int op_color = this->Color^1;
+	TableEntry entry;
+	bool found = false;
+#ifdef USE_TRANSPOSITION
+	if(move_id/100 != move_id%100 && table.query(key_before, op_color, entry)){
+		// hash hit
+		// no need to steal flip moves -> irreversible
+		// remove all the other moves
+		chosenMove.rank = 0;
+		entry.all_moves = {chosenMove};
+		entry.child_move = chosenMove;
+		entry.rdepth = MAX_DEPTH;
+		entry.vtype = ENTRY_EXACT;
+		// put back into transTable
+		found = true;
+
+		char movestr[6];
+		int StartPoint = move_id/100;
+		int EndPoint = move_id%100;
+		sprintf(movestr, "%c%c-%c%c",'a'+(StartPoint%4),'1'+(7-StartPoint/4),'a'+(EndPoint%4),'1'+(7-EndPoint/4));
+		// fprintf(stderr, "Successfully stolen move: %s\n", movestr);
+	}
+	
+	table.clear_tables({this->Color});
+	if(found){
+		table.insert(key_before, 2, entry);
+		table.clone(op_color, 2);
+	}
+#endif
+}
+
 void MyAI::generateMove(char move[6])
 {
 /* generateMove Call by reference: change src,dst */
@@ -371,7 +418,14 @@ void MyAI::generateMove(char move[6])
 	double prev_end = 0;
 
 	key128_t boardkey = this->transTable.compute_hash(this->main_chessboard);
-	this->transTable.clear_tables();
+	// this->transTable.clear_tables();
+
+	if (num_plys > 1) // uninitialized at first ply
+		moveStealing();
+
+	char op_move[6];
+	int op_start;
+	int op_end;
 
 	// depth-3 search
 	this->node = 0;
@@ -380,11 +434,16 @@ void MyAI::generateMove(char move[6])
 	StartPoint = best_move_tmp.from_location_no;
 	EndPoint   = best_move_tmp.to_location_no;
 	sprintf(move, "%c%c-%c%c",'a'+(StartPoint%4),'1'+(7-StartPoint/4),'a'+(EndPoint%4),'1'+(7-EndPoint/4));
+
+	op_start = this->prediction.from_location_no;
+	op_end = this->prediction.to_location_no;
+	sprintf(op_move, "%c%c-%c%c",'a'+(op_start%4),'1'+(7-op_start/4),'a'+(op_end%4),'1'+(7-op_end/4));
+
 	double wall = this->ply_elapsed - prev_end;
 	prev_end = this->ply_elapsed;
 	expected = wall * 2;
-	fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s, Rank: %d, Wall: %1.3lf\n", (this->timeIsUp ? 'U' : 'D'),
-			3, node, t - OFFSET, move, best_move_tmp.rank, wall / 1000);
+	fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s, Next: %s, Rank: %d, Wall: %1.3lf\n", (this->timeIsUp ? 'U' : 'D'),
+			3, node, t - OFFSET, move, op_move, best_move_tmp.rank, wall / 1000);
 	fflush(stderr);
 
 	// deeeper search
@@ -427,13 +486,17 @@ void MyAI::generateMove(char move[6])
 			sprintf(move, "%c%c-%c%c",'a'+(StartPoint%4),'1'+(7-StartPoint/4),'a'+(EndPoint%4),'1'+(7-EndPoint/4));
 		}else {best_move_tmp.rank = -1;}
 
+		op_start = this->prediction.from_location_no;
+		op_end = this->prediction.to_location_no;
+		sprintf(op_move, "%c%c-%c%c",'a'+(op_start%4),'1'+(7-op_start/4),'a'+(op_end%4),'1'+(7-op_end/4));
+
 		double wall = this->ply_elapsed - prev_end;
 		prev_end = this->ply_elapsed;
 		expected = wall * 2;
 		// U: Undone
 		// D: Done
-		fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s, Rank: %d, Wall: %1.3lf\n", (this->timeIsUp ? 'U' : 'D'),
-			depth, node, t - OFFSET, move, best_move_tmp.rank, wall / 1000);
+		fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s, Next: %s, Rank: %d, Wall: %1.3lf\n", (this->timeIsUp ? 'U' : 'D'),
+			depth, node, t - OFFSET, move, op_move, best_move_tmp.rank, wall / 1000);
 		fflush(stderr);
 	}
 	
@@ -579,6 +642,8 @@ bool cantWinCheck(const ChessBoard *chessboard, const int color, const bool is_n
 	// single chess and not cover
 	if (my_num == 1 && chessboard->Chess_Nums[2] == 0){
 		int me = chessboard->Heads[color];
+		if (chessboard->Chess_Nums[op_color] > 1) // single chess cannot eat more
+			return true;
 		for (int i = chessboard->Heads[op_color]; i != -1; i = chessboard->Next[i]){
 			int delta = abs(me/4 - i/4) + abs(me%4 - i%4);
 			if(is_next != (delta % 2)){
@@ -1020,7 +1085,7 @@ double evalColor(const ChessBoard *chessboard, const vector<MoveInfo> &Moves, co
 	*/
 	double distance = 0;
 	const double w_dist = 1/16;
-	const double max_dist = 11 * 16 * 16 * w_dist;
+	const double max_dist = 1344 * w_dist;
 	static array<bool, 7*7> predator{
 		/* 
 		p  c  n  r  m  g  k  */
@@ -1039,11 +1104,12 @@ double evalColor(const ChessBoard *chessboard, const vector<MoveInfo> &Moves, co
 				int ci = chessboard->Board[i];
 				int cj = chessboard->Board[j];
 				if (predator[ci * 7 + cj]){
-					distance += abs(j/4 - i/4) + abs(j%4 - i%4);
+					// cj can eat ci
+					distance += (double)max(abs(j/4 - i/4) + abs(j%4 - i%4), 2);
 				}
 			}
 		}
-	}
+	} else { distance = max_dist; }
 	value += distance * w_dist;
 	max_value += max_dist;
 #endif
@@ -1284,24 +1350,25 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 					n_flips==0 &&	// dont extend chance search
 					depth > 3 &&	// dont extend first search
 					remain_depth == 1 &&	// only extend horizon
-					searchExtension(new_chessboard, Moves, color)) ? (remain_depth + 2) : remain_depth;
+					color == this->Color && // only do this for me
+					searchExtension(new_chessboard, Moves, color)) ? (remain_depth + 1) : remain_depth;
 				t = -Nega_scout(new_chessboard, new_boardkey, new_move, n_flips, prev_flip, color^1, depth+1, new_remain_depth-1, -n, -max(alpha, m));
-				if ( // skip draw
-					(depth == 0) &&
-					(!new_chessboard.cantWin[this->Color]) &&
-					(Moves.size() > 1) &&
-					(m > -DBL_MAX) && // if all moves leads to draw -> pick one
-					isDraw(&new_chessboard)) continue;
+
+				if(skipDraw(new_chessboard, new_boardkey, depth, Moves.size(), i, m))
+					continue;
+
 				if(t > m){ 
 					if (n == beta || new_remain_depth < 3 || t >= beta){
 						m = t;
 						move = Moves[i];
+						if (depth == 0) this->prediction = new_move;
 						final_rdepth = new_remain_depth;
 					}
 					else{
 						t = -Nega_scout(new_chessboard, new_boardkey, new_move, n_flips, prev_flip, color^1, depth+1, new_remain_depth-1, -beta, -t);
 						m = t;
 						move = Moves[i];
+						if (depth == 0) this->prediction = new_move;
 						final_rdepth = new_remain_depth;
 					}
 				}
@@ -1355,6 +1422,7 @@ double MyAI::Star0_EQU(const ChessBoard& chessboard, const key128_t& boardkey, c
 	int trim = max( min(
 			(int)log2(Choice.size()+1) * 2 - 1,
 			 7), 1);
+	// int trim = 3;
 	for(auto& k: Choice){
 		ChessBoard new_chessboard = chessboard;
 		key128_t new_boardkey = table.MakeMove(boardkey, move, k);
@@ -1367,6 +1435,35 @@ double MyAI::Star0_EQU(const ChessBoard& chessboard, const key128_t& boardkey, c
 	}
 	assert(chessboard.Chess_Nums[2] > 0);
 	return total / chessboard.Chess_Nums[2];
+}
+
+bool MyAI::skipDraw(const ChessBoard& new_chessboard, const key128_t& new_boardkey, const int depth, const int num_moves, const int move_i, const double cur_best){
+	if (
+		(depth == 0) &&
+		(!new_chessboard.cantWin[this->Color]) &&
+		(num_moves > 1) && // dont skip if this is the only move
+		(move_i == 0 || cur_best > -DBL_MAX) // if all previous moves leads to draw -> dont skip
+	) {
+		if(isDraw(&new_chessboard))
+			return true;
+
+#ifdef USE_TRANSPOSITION
+		int op_color = this->Color^1;
+		TransPosition& table = this->transTable;
+		TableEntry entry;
+		if(table.query(new_boardkey, op_color, entry)){
+			// hash hit
+			ChessBoard next_chessboard = new_chessboard;
+			MoveInfo& next_move = entry.child_move;
+			if (next_move.from_location_no == next_move.to_location_no)
+				return false;
+			MakeMove(&next_chessboard, next_move.num, 0); // 0: dummy
+			if(isDraw(&next_chessboard))
+				return true;
+		}
+#endif
+	}
+	return false;
 }
 
 

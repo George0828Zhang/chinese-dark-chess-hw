@@ -73,7 +73,11 @@ bool TransPosition::insert(const key128_t& key, const int color, const TableEntr
     }
     return false;
 }
-void TransPosition::clear_tables(){
-    tables[RED].clear();
-    tables[BLACK].clear();
+void TransPosition::clear_tables(const vector<int>& ids){
+    for(auto i: ids){
+        tables[i].clear();
+    }
+}
+void TransPosition::clone(const int to, const int from){
+    tables[to] = tables[from];
 }

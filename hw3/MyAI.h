@@ -82,8 +82,7 @@ class TransPosition{
 	static const int POSITIONS = 32; 
 	static const int TYPES = 15;
 	array<key128_t, POSITIONS*TYPES> salt; // 32 pos, 14+1 types
-	array<tsl::robin_map<key128_t, TableEntry>, 2> tables;
-	// array<unordered_map<key128_t, TableEntry>, 2> tables;
+	array<tsl::robin_map<key128_t, TableEntry>, 3> tables;
 public:
 	void init(mt19937_64& rng);
 	static inline int Convert(int chess);
@@ -91,7 +90,8 @@ public:
 	key128_t MakeMove(const key128_t& other, const MoveInfo& move, const int chess = 0) const;
 	bool query(const key128_t& key, const int color, TableEntry& result);
 	bool insert(const key128_t& key, const int color, const TableEntry& update);
-	void clear_tables();
+	void clear_tables(const vector<int>& ids);
+	void clone(const int to, const int from);
 };
 
 
@@ -162,6 +162,13 @@ private:
 	double ply_time;
 	double ply_elapsed;
 
+	// predict
+	MoveInfo prediction;
+
+	// steal move
+	ChessBoard lag_chessboard;
+	void moveStealing();
+
 	// statistics
 	int node;
 
@@ -187,6 +194,7 @@ private:
 	bool searchExtension(const ChessBoard& chessboard, const vector<MoveInfo> &Moves, const int color);
 	bool isDraw(const ChessBoard* chessboard);
 	void moveOrdering(const key128_t& boardkey, vector<MoveInfo>& Moves, const int depth);
+	bool skipDraw(const ChessBoard& new_chessboard, const key128_t& newkey, const int depth, const int num_moves, const int move_i, const double cur_best);
 
 	bool isTimeUp();
 	double estimatePlyTime();
