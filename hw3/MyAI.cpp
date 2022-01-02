@@ -9,7 +9,7 @@
 #include <cmath>
 #include <cassert>
 
-#define NOASSERT
+// #define NOASSERT
 #ifdef NOASSERT
 #undef assert
 #define assert(x) ((void)0)
@@ -557,7 +557,7 @@ void moveInBoard(ChessBoard *chessboard, const int src, const int dst){
 	}
 }
 
-bool cantWinCheck(const ChessBoard *chessboard, const int color){
+bool cantWinCheck(const ChessBoard *chessboard, const int color, const bool is_next){
 	/*
 	P C N R M G K
 	0 1 2 3 4 5 6
@@ -565,11 +565,26 @@ bool cantWinCheck(const ChessBoard *chessboard, const int color){
 	if (chessboard->cantWin[color])
 		return true; // cant once, cant forever
 	int my_num = chessboard->Chess_Nums[color];
-	// int op_num = color == RED ? chessboard->Black_Chess_Num : chessboard->Red_Chess_Num;
 	int op_color = color^1;
-	// single cannon
-	if (chessboard->AliveChess[color * 7 + 1] > 0 && my_num < 2)
+	// no chess
+	if (my_num == 0)
 		return true;
+	// single cannon
+	if (chessboard->AliveChess[color * 7 + 1] > 0 && my_num <= 1)
+		return true;
+
+	// single chess and not cover
+	if (my_num == 1 && chessboard->Chess_Nums[2] == 0){
+		int me = chessboard->Heads[color];
+		for (int i = chessboard->Heads[op_color]; i != -1; i = chessboard->Next[i]){
+			int delta = abs(me/4 - i/4) + abs(me%4 - i%4);
+			if(is_next != (delta % 2)){
+				assert((is_next && (delta % 2 == 0)) || (!is_next && (delta % 2 == 1)));
+				// next && delta even || !next && delta odd
+				return true;
+			}
+		}
+	}
 	
 	/* Domination:
 		For each type, if number of pieces that can capture it
@@ -618,9 +633,8 @@ void MyAI::MakeMove(ChessBoard* chessboard, const int move, const int chess){
 		moveInBoard(chessboard, src, dst);
 	}
 	chessboard->History.push_back(move);
-	for (int c = 0; c < 2; c++){
-		chessboard->cantWin[c] = cantWinCheck(chessboard, c);
-	}
+	chessboard->cantWin[RED] = cantWinCheck(chessboard, RED, chessboard->Board[dst] / 7 == BLACK);
+	chessboard->cantWin[BLACK] = cantWinCheck(chessboard, BLACK, chessboard->Board[dst] / 7 == RED);
 }
 
 void MyAI::MakeMove(ChessBoard* chessboard, const char move[6])
@@ -1123,6 +1137,8 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 	bool cached_moves = false;
 #ifdef USE_TRANSPOSITION
 	if(table.query(boardkey, color, entry)){
+		assert(table.compute_hash(chessboard) == boardkey);
+
 		// hash hit
 		if (entry.rdepth >= remain_depth){
 			if (entry.vtype == ENTRY_EXACT){
@@ -1218,13 +1234,11 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 				MakeMove(&new_chessboard, Moves[i].num, 0); // 0: dummy
 				key128_t new_boardkey = table.MakeMove(boardkey, Moves[i], 0);
 				t = -Nega_scout(new_chessboard, new_boardkey, new_move, color^1, depth+1, remain_depth-1, -n, -max(alpha, m));
-				bool draw_penalize = (
+				if ( // skip draw
 					(depth == 0) &&
 					(!new_chessboard.cantWin[this->Color]) &&
-					isDraw(&new_chessboard));
-				if (draw_penalize){
-					t -= WIN;
-				}
+					(Moves.size() > 1) &&
+					isDraw(&new_chessboard)) continue;
 				if(t > m){ 
 					if (n == beta || remain_depth < 3 || t >= beta){
 						m = t;
@@ -1232,14 +1246,13 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 					}
 					else{
 						t = -Nega_scout(new_chessboard, new_boardkey, new_move, color^1, depth+1, remain_depth-1, -beta, -t);
-						if (draw_penalize)
-							t -= WIN;
 						m = t;
 						move = Moves[i];
 					}
 				}
-			}			
-			Moves[i].priority = (t - OFFSET) * PRIORITY_SEARCHED + Moves[i].raw_priority;
+			}
+			assert((depth&1) == (t <= 0));
+			Moves[i].priority = (t*(depth&1 ? -1 : 1) - OFFSET) * PRIORITY_SEARCHED + Moves[i].raw_priority;
 
 			if (m >= beta){
 				// record the hash entry as a lower bound
@@ -1247,7 +1260,7 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 				entry.value = m;
 				entry.rdepth = remain_depth;
 				entry.vtype = ENTRY_LOWER;
-				entry.child_move = Moves[i];
+				entry.child_move = move;
 				entry.all_moves = Moves;
 				entry.flip_choices = Choice;
 				table.insert(boardkey, color, entry);
