@@ -1139,6 +1139,12 @@ bool MyAI::searchExtension(const ChessBoard& chessboard, const vector<MoveInfo> 
 	// Extremely low mobility.	
 	if (Moves.size() < 3)
 		return true;
+	// Last move is capturing.
+	if (!chessboard.History.empty()){
+		int last = chessboard.History.back();
+		if ((chessboard.NoEatFlip == 0) && ((last / 100) != (last % 100)))
+			return true;
+	}
 	// In-check.
 	if(chessboard.Chess_Nums[color] == 1 && chessboard.Heads[color] != -1){
 		// this color has one chess and not dark
@@ -1164,13 +1170,7 @@ bool MyAI::searchExtension(const ChessBoard& chessboard, const vector<MoveInfo> 
 			)
 				return true;
 		}
-	}
-	// Last move is capturing.
-	if (!chessboard.History.empty()){
-		int last = chessboard.History.back();
-		if ((chessboard.NoEatFlip == 0) && ((last / 100) != (last % 100)))
-			return true;
-	}
+	}	
 	// The current best score is much lower than the value of your last ply.
 #endif
 	return false;
@@ -1280,7 +1280,11 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 				ChessBoard new_chessboard = chessboard;
 				MakeMove(&new_chessboard, Moves[i].num, 0); // 0: dummy
 				key128_t new_boardkey = table.MakeMove(boardkey, Moves[i], 0);
-				int new_remain_depth = (n_flips==0 && searchExtension(new_chessboard, Moves, color)) ? (remain_depth + 1) : remain_depth;
+				int new_remain_depth = (
+					n_flips==0 &&	// dont extend chance search
+					depth > 3 &&	// dont extend first search
+					remain_depth == 1 &&	// only extend horizon
+					searchExtension(new_chessboard, Moves, color)) ? (remain_depth + 2) : remain_depth;
 				t = -Nega_scout(new_chessboard, new_boardkey, new_move, n_flips, prev_flip, color^1, depth+1, new_remain_depth-1, -n, -max(alpha, m));
 				if ( // skip draw
 					(depth == 0) &&
@@ -1348,7 +1352,9 @@ double MyAI::Star0_EQU(const ChessBoard& chessboard, const key128_t& boardkey, c
 	TransPosition& table = this->transTable;
 	MoveInfo new_move;
 	double total = 0;
-	int trim = min((int)log2(Choice.size()) * 2 - 1, 7);
+	int trim = max( min(
+			(int)log2(Choice.size()+1) * 2 - 1,
+			 7), 1);
 	for(auto& k: Choice){
 		ChessBoard new_chessboard = chessboard;
 		key128_t new_boardkey = table.MakeMove(boardkey, move, k);
