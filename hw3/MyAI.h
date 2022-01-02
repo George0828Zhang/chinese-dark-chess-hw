@@ -181,9 +181,10 @@ private:
 	void Expand(const ChessBoard *chessboard, const int color, vector<MoveInfo> &Result);
 	// double Evaluate(const ChessBoard* chessboard, const int legal_move_count, const int color);
 	double Evaluate(const ChessBoard *chessboard, const vector<MoveInfo> &Moves, const int color);
-	double Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, MoveInfo& move, const int color, const int depth, const int remain_depth, const double alpha, const double beta);
-	double Star0_EQU(const ChessBoard& chessboard, const key128_t& boardkey, const MoveInfo& move, const vector<int>& Choice, const int color, const int depth, const int remain_depth);
+	double Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, MoveInfo& move, const int n_flips, const int prev_flip, const int color, const int depth, const int remain_depth, const double alpha, const double beta);
+	double Star0_EQU(const ChessBoard& chessboard, const key128_t& boardkey, const MoveInfo& move, const int n_flips, const vector<int>& Choice, const int color, const int depth, const int remain_depth);
 	// double SEE(const ChessBoard *chessboard, const int position, const int color);
+	bool searchExtension(const ChessBoard& chessboard, const vector<MoveInfo> &Moves, const int color);
 	bool isDraw(const ChessBoard* chessboard);
 	void moveOrdering(const key128_t& boardkey, vector<MoveInfo>& Moves, const int depth);
 
@@ -195,6 +196,41 @@ private:
 	void Pirnf_Chessboard();
 
 	TransPosition transTable;
+
+	const array<int, 32*10> cannon_shoot = {
+		1, 2, 3, 4, 8, 12, 16, 20, 24, 28, 
+		0, 2, 3, 5, 9, 13, 17, 21, 25, 29, 
+		0, 1, 3, 6, 10, 14, 18, 22, 26, 30, 
+		0, 1, 2, 7, 11, 15, 19, 23, 27, 31, 
+		0, 5, 6, 7, 8, 12, 16, 20, 24, 28, 
+		1, 4, 6, 7, 9, 13, 17, 21, 25, 29, 
+		2, 4, 5, 7, 10, 14, 18, 22, 26, 30, 
+		3, 4, 5, 6, 11, 15, 19, 23, 27, 31, 
+		0, 4, 9, 10, 11, 12, 16, 20, 24, 28, 
+		1, 5, 8, 10, 11, 13, 17, 21, 25, 29, 
+		2, 6, 8, 9, 11, 14, 18, 22, 26, 30, 
+		3, 7, 8, 9, 10, 15, 19, 23, 27, 31, 
+		0, 4, 8, 13, 14, 15, 16, 20, 24, 28, 
+		1, 5, 9, 12, 14, 15, 17, 21, 25, 29, 
+		2, 6, 10, 12, 13, 15, 18, 22, 26, 30, 
+		3, 7, 11, 12, 13, 14, 19, 23, 27, 31, 
+		0, 4, 8, 12, 17, 18, 19, 20, 24, 28, 
+		1, 5, 9, 13, 16, 18, 19, 21, 25, 29, 
+		2, 6, 10, 14, 16, 17, 19, 22, 26, 30, 
+		3, 7, 11, 15, 16, 17, 18, 23, 27, 31, 
+		0, 4, 8, 12, 16, 21, 22, 23, 24, 28, 
+		1, 5, 9, 13, 17, 20, 22, 23, 25, 29, 
+		2, 6, 10, 14, 18, 20, 21, 23, 26, 30, 
+		3, 7, 11, 15, 19, 20, 21, 22, 27, 31, 
+		0, 4, 8, 12, 16, 20, 25, 26, 27, 28, 
+		1, 5, 9, 13, 17, 21, 24, 26, 27, 29, 
+		2, 6, 10, 14, 18, 22, 24, 25, 27, 30, 
+		3, 7, 11, 15, 19, 23, 24, 25, 26, 31, 
+		0, 4, 8, 12, 16, 20, 24, 29, 30, 31, 
+		1, 5, 9, 13, 17, 21, 25, 28, 30, 31, 
+		2, 6, 10, 14, 18, 22, 26, 28, 29, 31, 
+		3, 7, 11, 15, 19, 23, 27, 28, 29, 30
+	};
 };
 
 #endif

@@ -15,7 +15,7 @@
 #define assert(x) ((void)0)
 #endif
 
-#define MAX_DEPTH 31
+#define MAX_DEPTH 32
 
 #define WIN 1.0
 #define DRAW 0.2
@@ -32,7 +32,7 @@
 #define MAX_PLY_TIME 15000.
 
 #ifdef FAST
-#define EXPECT_PLYS 300 / 2
+#define EXPECT_PLYS 250 / 2
 #else
 #define EXPECT_PLYS 180 / 2
 #endif
@@ -41,6 +41,7 @@
 
 #define USE_TRANSPOSITION
 #define USE_ASPIRATION
+#define USE_SEARCH_EXTENSION
 
 #define DISTANCE
 
@@ -375,7 +376,7 @@ void MyAI::generateMove(char move[6])
 	// depth-3 search
 	this->node = 0;
 	MoveInfo best_move_tmp;
-	t = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, this->Color, 0, 3, -DBL_MAX, DBL_MAX);
+	t = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, 0, -1, this->Color, 0, 3, -DBL_MAX, DBL_MAX);
 	StartPoint = best_move_tmp.from_location_no;
 	EndPoint   = best_move_tmp.to_location_no;
 	sprintf(move, "%c%c-%c%c",'a'+(StartPoint%4),'1'+(7-StartPoint/4),'a'+(EndPoint%4),'1'+(7-EndPoint/4));
@@ -407,13 +408,13 @@ void MyAI::generateMove(char move[6])
 #endif
 		double alpha = t - threshold;
 		double beta = t + threshold;
-		t_tmp = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, this->Color, 0, depth, alpha, beta);
+		t_tmp = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, 0, -1, this->Color, 0, depth, alpha, beta);
 
 		if (t_tmp <= alpha){ // failed low
-			t_tmp = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, this->Color, 0, depth, -DBL_MAX, t_tmp);
+			t_tmp = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, 0, -1, this->Color, 0, depth, -DBL_MAX, t_tmp);
 		}
 		else if (t_tmp >= beta){ // failed high
-			t_tmp = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, this->Color, 0, depth, t_tmp, DBL_MAX);
+			t_tmp = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, 0, -1, this->Color, 0, depth, t_tmp, DBL_MAX);
 		}
 
 		// check score
@@ -660,40 +661,6 @@ void MyAI::Expand(const ChessBoard *chessboard, const int color, vector<MoveInfo
 	if (color == 2) return;// initial board
 	int n_chess = chessboard->Chess_Nums[color];
 	const array<int, 32>& board = chessboard->Board;
-	const array<int, 32*10> cannon_shoot{
-		1, 2, 3, 4, 8, 12, 16, 20, 24, 28, 
-		0, 2, 3, 5, 9, 13, 17, 21, 25, 29, 
-		0, 1, 3, 6, 10, 14, 18, 22, 26, 30, 
-		0, 1, 2, 7, 11, 15, 19, 23, 27, 31, 
-		0, 5, 6, 7, 8, 12, 16, 20, 24, 28, 
-		1, 4, 6, 7, 9, 13, 17, 21, 25, 29, 
-		2, 4, 5, 7, 10, 14, 18, 22, 26, 30, 
-		3, 4, 5, 6, 11, 15, 19, 23, 27, 31, 
-		0, 4, 9, 10, 11, 12, 16, 20, 24, 28, 
-		1, 5, 8, 10, 11, 13, 17, 21, 25, 29, 
-		2, 6, 8, 9, 11, 14, 18, 22, 26, 30, 
-		3, 7, 8, 9, 10, 15, 19, 23, 27, 31, 
-		0, 4, 8, 13, 14, 15, 16, 20, 24, 28, 
-		1, 5, 9, 12, 14, 15, 17, 21, 25, 29, 
-		2, 6, 10, 12, 13, 15, 18, 22, 26, 30, 
-		3, 7, 11, 12, 13, 14, 19, 23, 27, 31, 
-		0, 4, 8, 12, 17, 18, 19, 20, 24, 28, 
-		1, 5, 9, 13, 16, 18, 19, 21, 25, 29, 
-		2, 6, 10, 14, 16, 17, 19, 22, 26, 30, 
-		3, 7, 11, 15, 16, 17, 18, 23, 27, 31, 
-		0, 4, 8, 12, 16, 21, 22, 23, 24, 28, 
-		1, 5, 9, 13, 17, 20, 22, 23, 25, 29, 
-		2, 6, 10, 14, 18, 20, 21, 23, 26, 30, 
-		3, 7, 11, 15, 19, 20, 21, 22, 27, 31, 
-		0, 4, 8, 12, 16, 20, 25, 26, 27, 28, 
-		1, 5, 9, 13, 17, 21, 24, 26, 27, 29, 
-		2, 6, 10, 14, 18, 22, 24, 25, 27, 30, 
-		3, 7, 11, 15, 19, 23, 24, 25, 26, 31, 
-		0, 4, 8, 12, 16, 20, 24, 29, 30, 31, 
-		1, 5, 9, 13, 17, 21, 25, 28, 30, 31, 
-		2, 6, 10, 14, 18, 22, 26, 28, 29, 31, 
-		3, 7, 11, 15, 19, 23, 27, 28, 29, 30
-	};
 
 	for (int i = chessboard->Heads[color]; i != -1; i = chessboard->Next[i]){
 		n_chess--;
@@ -703,7 +670,7 @@ void MyAI::Expand(const ChessBoard *chessboard, const int color, vector<MoveInfo
 		if(board[i] % 7 == 1)
 		{
 			for(int j = 0; j < 10; j++){
-				int dst = cannon_shoot.at(i*10+j);
+				int dst = this->cannon_shoot.at(i*10+j);
 				if(Referee(board,i,dst,color))
 				{
 					Result.emplace_back(board, i, dst);
@@ -1097,6 +1064,11 @@ double MyAI::Evaluate(const ChessBoard* chessboard,
 	bool finish;
 	int legal_move_count = Moves.size();
 
+	if(legal_move_count == 0 && chessboard->Heads[2] != -1){
+		// at least one flip move is legal
+		legal_move_count = 1;
+	}
+
 	if(legal_move_count == 0){ // Win, Lose
 		if(color == this->Color){ // Lose
 			score += LOSE - WIN;
@@ -1162,7 +1134,49 @@ double MyAI::Evaluate(const ChessBoard* chessboard,
 	return score;
 }
 
-double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, MoveInfo& move, const int color, const int depth, const int remain_depth, double alpha, double beta){
+bool MyAI::searchExtension(const ChessBoard& chessboard, const vector<MoveInfo> &Moves, const int color){
+#ifdef USE_SEARCH_EXTENSION
+	// Extremely low mobility.	
+	if (Moves.size() < 3)
+		return true;
+	// In-check.
+	if(chessboard.Chess_Nums[color] == 1 && chessboard.Heads[color] != -1){
+		// this color has one chess and not dark
+		const array<int, 32>& board = chessboard.Board;
+		int op_color = color^1;
+		int i = chessboard.Heads[color];
+
+		for(auto d: array<int,4>{-4,4,-1,1}){
+			if ((i+d >= 0) &&
+				(i+d < 32) &&
+				(abs(i/4-(i+d)/4) + abs(i%4-(i+d)%4) == 1) &&
+				(board[i+d] >= 0) && 
+				(board[i+d] / 7 == op_color) && 
+				Referee(board,i+d,i,op_color)
+			)
+				return true;
+		}
+		// cannon
+		for(int j = 0; j < 10; j++){
+			int src = this->cannon_shoot.at(i*10+j);
+			if((board[src] == op_color*7 + 1) &&
+				Referee(board,src,i,op_color)
+			)
+				return true;
+		}
+	}
+	// Last move is capturing.
+	if (!chessboard.History.empty()){
+		int last = chessboard.History.back();
+		if ((chessboard.NoEatFlip == 0) && ((last / 100) != (last % 100)))
+			return true;
+	}
+	// The current best score is much lower than the value of your last ply.
+#endif
+	return false;
+}
+
+double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, MoveInfo& move, const int n_flips, const int prev_flip, const int color, const int depth, const int remain_depth, double alpha, double beta){
 	assert(color == RED || color == BLACK);
 
 	vector<MoveInfo> Moves;
@@ -1215,34 +1229,25 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 
 	// flip
 	// first check whether should do flip
-	if (remain_depth >= 3 && !cached_moves){
-		int n_flips_before = 0;
-		int hist_size = chessboard.History.size();
-		for(int i = hist_size - 1; i >= max(hist_size - depth, 0); i--){
-			int mv = chessboard.History.at(i);
-			if (mv / 100 == mv % 100){
-				n_flips_before++;
-				if (hist_size - i < 4){
-					n_flips_before = MAX_FLIPS_IN_SEARCH;
-					break;
-				}
+	if ((remain_depth >= 3) &&
+		(!cached_moves) &&
+		(n_flips < MAX_FLIPS_IN_SEARCH) &&
+		((depth - prev_flip >= 3) || (n_flips == 0))
+	){
+		for(int j = 0; j < 14; j++){ // find remain chess
+			if(chessboard.CoverChess[j] > 0){
+				Choice.push_back(j);
 			}
 		}
-		if (n_flips_before < MAX_FLIPS_IN_SEARCH){
-			for(int j = 0; j < 14; j++){ // find remain chess
-				if(chessboard.CoverChess[j] > 0){
-					Choice.push_back(j);
-				}
-			}
-			for (int i = chessboard.Heads[2]; i != -1; i = chessboard.Next[i]){
-				assert(chessboard.Board[i] == CHESS_COVER);
-				Moves.emplace_back(chessboard.Board, i, i);
-			}
+		for (int i = chessboard.Heads[2]; i != -1; i = chessboard.Next[i]){
+			assert(chessboard.Board[i] == CHESS_COVER);
+			Moves.emplace_back(chessboard.Board, i, i);
 		}
 	}
 	moveOrdering(boardkey, Moves, depth);
 
 	if(isTimeUp() || // time is up
+		depth >= MAX_DEPTH || // reach absolute depth
 		remain_depth <= 0 || // reach limit of depth 
 		chessboard.Chess_Nums[RED] == 0 || // terminal node (no chess type)
 		chessboard.Chess_Nums[BLACK] == 0 || // terminal node (no chess type)
@@ -1256,23 +1261,27 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 		double m = -DBL_MAX;
 		double n = beta;
 		MoveInfo new_move;
+		int final_rdepth = remain_depth;
 		// search deeper
 		for(uint i = 0; i < Moves.size(); i++){ // move
-			double t = -DBL_MAX;
+			double t = -DBL_MAX;			
 			if (Moves[i].from_location_no == Moves[i].to_location_no){
 				// Chance node
-				t = Star0_EQU(chessboard, boardkey, Moves[i], Choice, color, depth, remain_depth);
+				t = Star0_EQU(chessboard, boardkey, Moves[i], n_flips, Choice, color, depth, remain_depth);
 
 				if(t > m){ 
+					// TODO: don't always use best
 					m = t;
 					move = Moves[i];
+					final_rdepth = remain_depth;
 				}
 			}
 			else{
 				ChessBoard new_chessboard = chessboard;
 				MakeMove(&new_chessboard, Moves[i].num, 0); // 0: dummy
 				key128_t new_boardkey = table.MakeMove(boardkey, Moves[i], 0);
-				t = -Nega_scout(new_chessboard, new_boardkey, new_move, color^1, depth+1, remain_depth-1, -n, -max(alpha, m));
+				int new_remain_depth = (n_flips==0 && searchExtension(new_chessboard, Moves, color)) ? (remain_depth + 1) : remain_depth;
+				t = -Nega_scout(new_chessboard, new_boardkey, new_move, n_flips, prev_flip, color^1, depth+1, new_remain_depth-1, -n, -max(alpha, m));
 				if ( // skip draw
 					(depth == 0) &&
 					(!new_chessboard.cantWin[this->Color]) &&
@@ -1280,28 +1289,30 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 					(m > -DBL_MAX) && // if all moves leads to draw -> pick one
 					isDraw(&new_chessboard)) continue;
 				if(t > m){ 
-					if (n == beta || remain_depth < 3 || t >= beta){
+					if (n == beta || new_remain_depth < 3 || t >= beta){
 						m = t;
 						move = Moves[i];
+						final_rdepth = new_remain_depth;
 					}
 					else{
-						t = -Nega_scout(new_chessboard, new_boardkey, new_move, color^1, depth+1, remain_depth-1, -beta, -t);
+						t = -Nega_scout(new_chessboard, new_boardkey, new_move, n_flips, prev_flip, color^1, depth+1, new_remain_depth-1, -beta, -t);
 						m = t;
 						move = Moves[i];
+						final_rdepth = new_remain_depth;
 					}
 				}
 			}
-			if ((depth&1) != (t <= 0)){
+			if ((t!=0) && ((depth&1) != (t < 0))){
 				fprintf(stderr, "Depth %d but value %.5lf\n", depth, t);
 			}
-			assert((depth&1) == (t <= 0));
+			assert((t==0) || ((depth&1) == (t < 0)));
 			Moves[i].priority = (t*(depth&1 ? -1 : 1) - OFFSET) * PRIORITY_SEARCHED + Moves[i].raw_priority;
 
 			if (m >= beta){
 				// record the hash entry as a lower bound
 #ifdef USE_TRANSPOSITION
 				entry.value = m;
-				entry.rdepth = remain_depth;
+				entry.rdepth = final_rdepth;
 				entry.vtype = ENTRY_LOWER;
 				entry.child_move = move;
 				entry.all_moves = Moves;
@@ -1323,7 +1334,7 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 			entry.vtype = ENTRY_UPPER;
 		}
 		entry.value = m;
-		entry.rdepth = remain_depth;
+		entry.rdepth = final_rdepth;
 		entry.child_move = move;
 		entry.all_moves = Moves;
 		entry.flip_choices = Choice;
@@ -1333,18 +1344,19 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 	}
 }
 
-double MyAI::Star0_EQU(const ChessBoard& chessboard, const key128_t& boardkey, const MoveInfo& move, const vector<int>& Choice, const int color, const int depth, const int remain_depth){
+double MyAI::Star0_EQU(const ChessBoard& chessboard, const key128_t& boardkey, const MoveInfo& move, const int n_flips, const vector<int>& Choice, const int color, const int depth, const int remain_depth){
 	TransPosition& table = this->transTable;
 	MoveInfo new_move;
 	double total = 0;
+	int trim = min((int)log2(Choice.size()) * 2 - 1, 7);
 	for(auto& k: Choice){
 		ChessBoard new_chessboard = chessboard;
 		key128_t new_boardkey = table.MakeMove(boardkey, move, k);
 		MakeMove(&new_chessboard, move.num, k);
 
 		// int next_col = (color == 2) ? ((k / 7)^1) : (color^1);
-
-		double t = -Nega_scout(new_chessboard, new_boardkey, new_move, color^1, depth+1, remain_depth-3, -DBL_MAX, DBL_MAX);
+		int prev_flip = depth;
+		double t = -Nega_scout(new_chessboard, new_boardkey, new_move, n_flips+1, prev_flip, color^1, depth+1, remain_depth-trim, -DBL_MAX, DBL_MAX);
 		total += chessboard.CoverChess[k] * t;
 	}
 	assert(chessboard.Chess_Nums[2] > 0);
