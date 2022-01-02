@@ -42,6 +42,8 @@
 #define USE_TRANSPOSITION
 #define USE_ASPIRATION
 
+#define DISTANCE
+
 using namespace std;
 
 mt19937_64 rng;
@@ -1042,6 +1044,43 @@ double evalColor(const ChessBoard *chessboard, const vector<MoveInfo> &Moves, co
 
 	value += mobility;
 	max_value += max_mobi;
+
+#ifdef DISTANCE
+	/* add bonus to increase distance from predators
+	(unrealistic) max distance = 11 * 16 * 16
+	max increase:
+		+16
+	*/
+	double distance = 0;
+	const double w_dist = 1/16;
+	const double max_dist = 11 * 16 * 16 * w_dist;
+	static array<bool, 7*7> predator{
+		/* 
+		p  c  n  r  m  g  k  */
+		0, 1, 1, 1, 1, 1, 0, // p
+		0, 0, 1, 1, 1, 1, 1, // c
+		0, 0, 0, 1, 1, 1, 1, // n
+		0, 0, 0, 0, 1, 1, 1, // r
+		0, 0, 0, 0, 0, 1, 1, // m
+		0, 0, 0, 0, 0, 0, 1, // g
+		1, 0, 0, 0, 0, 0, 0  // k
+	};
+	if (chessboard->Chess_Nums[color] <= 8){
+		// only do this at endgame
+		for (int i = chessboard->Heads[color]; i != -1; i = chessboard->Next[i]){
+			for (int j = chessboard->Heads[color^1]; j != -1; j = chessboard->Next[j]){
+				int ci = chessboard->Board[i];
+				int cj = chessboard->Board[j];
+				if (predator[ci * 7 + cj]){
+					distance += abs(j/4 - i/4) + abs(j%4 - i%4);
+				}
+			}
+		}
+	}
+	value += distance * w_dist;
+	max_value += max_dist;
+#endif
+
 	assert(value <= max_value);
 
 	return value / max_value;
@@ -1238,6 +1277,7 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 					(depth == 0) &&
 					(!new_chessboard.cantWin[this->Color]) &&
 					(Moves.size() > 1) &&
+					(m > -DBL_MAX) && // if all moves leads to draw -> pick one
 					isDraw(&new_chessboard)) continue;
 				if(t > m){ 
 					if (n == beta || remain_depth < 3 || t >= beta){
@@ -1250,6 +1290,9 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 						move = Moves[i];
 					}
 				}
+			}
+			if ((depth&1) != (t <= 0)){
+				fprintf(stderr, "Depth %d but value %.5lf\n", depth, t);
 			}
 			assert((depth&1) == (t <= 0));
 			Moves[i].priority = (t*(depth&1 ? -1 : 1) - OFFSET) * PRIORITY_SEARCHED + Moves[i].raw_priority;
