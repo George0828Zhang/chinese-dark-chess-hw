@@ -19,6 +19,8 @@
 #define CHESS_EMPTY -2
 #define COMMAND_NUM 19
 
+#define MAX_DEPTH 31
+
 using namespace std;
 
 /* courtesy of https://codereview.stackexchange.com/questions/109260/seed-stdmt19937-from-stdrandom-device */
@@ -82,7 +84,7 @@ class TransPosition{
 	static const int POSITIONS = 32; 
 	static const int TYPES = 15;
 	array<key128_t, POSITIONS*TYPES> salt; // 32 pos, 14+1 types
-	array<tsl::robin_map<key128_t, TableEntry>, 3> tables;
+	array<tsl::robin_map<key128_t, TableEntry>, 2> tables;
 public:
 	void init(mt19937_64& rng);
 	static inline int Convert(int chess);
@@ -92,6 +94,27 @@ public:
 	bool insert(const key128_t& key, const int color, const TableEntry& update);
 	void clear_tables(const vector<int>& ids);
 	void clone(const int to, const int from);
+};
+
+class KillerTable{
+	// [depth][m] -> depth*2 + i
+	array<MoveInfo, (MAX_DEPTH+1)*2> table;
+	array<bool, MAX_DEPTH+1> next_id;
+public:
+	KillerTable(){
+		next_id.fill(0);
+	}
+	static inline bool same(const MoveInfo& a, const MoveInfo& b){
+		return (a.from_location_no == b.from_location_no) &&
+			(a.to_location_no == b.to_location_no);
+	}
+	bool is_killer(const MoveInfo& move, const int depth){
+		return same(table[depth*2], move) || same(table[depth*2+1], move);
+	}
+	void insert(const MoveInfo& move, const int depth){
+		table[depth*2 + next_id[depth]] = move;
+		next_id[depth] = !next_id[depth];
+	}
 };
 
 
@@ -165,13 +188,11 @@ private:
 	// predict
 	MoveInfo prediction;
 
-	// steal move
-	ChessBoard lag_chessboard;
-	void moveStealing();
+	// killer
+	KillerTable killer;
 
 	// statistics
 	int node;
-	array<int, 32*32> historyHeuristic;  
 
 	// Utils
 	int GetFin(char c);

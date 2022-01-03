@@ -15,8 +15,6 @@
 #define assert(x) ((void)0)
 #endif
 
-#define MAX_DEPTH 32
-
 #define WIN 1.0
 #define DRAW 0.2
 #define LOSE 0.0
@@ -42,7 +40,7 @@
 #define USE_TRANSPOSITION
 #define USE_ASPIRATION
 #define USE_SEARCH_EXTENSION
-// #define USE_HISTORY
+#define USE_KILLER
 
 // #define RANDOM_WALK
 #define DISTANCE
@@ -119,7 +117,6 @@ bool MyAI::num_moves_to_draw(const char* data[], char* response){
 bool MyAI::move(const char* data[], char* response){
   char move[6];
 	sprintf(move, "%s-%s", data[0], data[1]);
-	this->lag_chessboard = this->main_chessboard;
 	this->MakeMove(&(this->main_chessboard), move);
 	return 0;
 }
@@ -127,7 +124,6 @@ bool MyAI::move(const char* data[], char* response){
 bool MyAI::flip(const char* data[], char* response){
   char move[6];
 	sprintf(move, "%s(%s)", data[0], data[1]);
-	this->lag_chessboard = this->main_chessboard;
 	this->MakeMove(&(this->main_chessboard), move);
 	return 0;
 }
@@ -188,6 +184,7 @@ bool MyAI::init_board(const char* data[], char* response){
 #define PRIORITY_MOVE 1
 #define PRIORITY_EAT 100
 #define PRIORITY_SEARCHED 10000
+#define PRIORITY_KILLER 1000000
 // #define PRIORITY_HISTORY 262144  // 2<<18
 
 MoveInfo::MoveInfo(const array<int, 32>& board, int from, int to){
@@ -217,12 +214,13 @@ MoveInfo::MoveInfo(const array<int, 32>& board, int from, int to){
 	priority = raw_priority;
 }
 void MyAI::moveOrdering(const key128_t& boardkey, vector<MoveInfo>& Moves, const int depth){
-#ifdef USE_HISTORY
-	for(auto& m : Moves){
-		m.priority = historyHeuristic[m.num]; // * PRIORITY_HISTORY + m.priority % PRIORITY_HISTORY;
+#ifdef USE_KILLER
+	for(auto& m: Moves){
+		if(this->killer.is_killer(m, depth)){
+			m.priority = PRIORITY_KILLER + m.raw_priority;
+		}
 	}
 #endif
-
 	sort(Moves.begin(), Moves.end(), [](const MoveInfo& a, const MoveInfo& b) {return a.priority > b.priority;});
 	if (depth == 0){
 		// set priority to rank to be printed
@@ -322,7 +320,6 @@ void MyAI::initBoardState()
 	rng = ProperlySeededRandomEngine<mt19937_64>();
 	transTable.init(rng);
 
-	historyHeuristic.fill(0);
 
 	Pirnf_Chessboard();
 }
@@ -356,47 +353,6 @@ void MyAI::openingMove(char move[6])
 	this->Pirnf_Chessboard();
 }
 
-void MyAI::moveStealing(){
-	/* get the previos move from opponent, and store it into transposition table */
-		// check table
-	key128_t key_before = this->transTable.compute_hash(this->lag_chessboard);
-
-	// figure out which move is made by opponent
-	int move_id = this->main_chessboard.History.back();	
-	MoveInfo chosenMove(this->lag_chessboard.Board, move_id/100, move_id%100);
-
-	TransPosition& table = this->transTable;
-	int op_color = this->Color^1;
-	TableEntry entry;
-	bool found = false;
-#ifdef USE_TRANSPOSITION
-	if(move_id/100 != move_id%100 && table.query(key_before, op_color, entry)){
-		// hash hit
-		// no need to steal flip moves -> irreversible
-		// remove all the other moves
-		chosenMove.rank = 0;
-		entry.all_moves = {chosenMove};
-		entry.child_move = chosenMove;
-		entry.rdepth = MAX_DEPTH;
-		entry.vtype = ENTRY_EXACT;
-		// put back into transTable
-		found = true;
-
-		char movestr[6];
-		int StartPoint = move_id/100;
-		int EndPoint = move_id%100;
-		sprintf(movestr, "%c%c-%c%c",'a'+(StartPoint%4),'1'+(7-StartPoint/4),'a'+(EndPoint%4),'1'+(7-EndPoint/4));
-		// fprintf(stderr, "Successfully stolen move: %s\n", movestr);
-	}
-	
-	table.clear_tables({this->Color});
-	if(found){
-		table.insert(key_before, 2, entry);
-		table.clone(op_color, 2);
-	}
-#endif
-}
-
 void MyAI::generateMove(char move[6])
 {
 /* generateMove Call by reference: change src,dst */
@@ -428,16 +384,11 @@ void MyAI::generateMove(char move[6])
 	double prev_end = 0;
 
 	key128_t boardkey = this->transTable.compute_hash(this->main_chessboard);
-	// this->transTable.clear_tables();
 
-	if (num_plys > 1) // uninitialized at first ply
-		moveStealing();
+	this->transTable.clear_tables({RED,BLACK});
 
-#ifdef USE_HISTORY
-	// aging for history
-	for(auto& c: historyHeuristic){
-		c >>= 1;
-	}
+#ifdef USE_KILLER
+	this->killer = KillerTable();
 #endif
 
 	char op_move[6];
@@ -514,6 +465,10 @@ void MyAI::generateMove(char move[6])
 		// D: Done
 		fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s, Next: %s, Rank: %d, Wall: %1.3lf\n", (this->timeIsUp ? 'U' : 'D'),
 			depth, node, t - OFFSET, move, op_move, best_move_tmp.rank, wall / 1000);
+		fflush(stderr);
+	}
+	if(this->main_chessboard.cantWin[this->Color]){
+		fprintf(stderr, "Can't win.\n");
 		fflush(stderr);
 	}
 	
@@ -1427,8 +1382,8 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 				entry.flip_choices = Choice;
 				table.insert(boardkey, color, entry);
 #endif
-#ifdef USE_HISTORY
-				historyHeuristic[move.num] += (1<<min(final_rdepth, 13));
+#ifdef USE_KILLER
+				this->killer.insert(move, depth);
 #endif
 				return m;
 			}
@@ -1450,9 +1405,6 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 		entry.all_moves = Moves;
 		entry.flip_choices = Choice;
 		table.insert(boardkey, color, entry);
-#endif
-#ifdef USE_HISTORY
-		historyHeuristic[move.num] += (1<<min(final_rdepth, 13));
 #endif
 		return m;
 	}
