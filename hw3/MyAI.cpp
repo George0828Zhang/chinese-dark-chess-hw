@@ -42,6 +42,7 @@
 #define USE_TRANSPOSITION
 #define USE_ASPIRATION
 #define USE_SEARCH_EXTENSION
+// #define USE_HISTORY
 
 // #define RANDOM_WALK
 #define DISTANCE
@@ -187,6 +188,7 @@ bool MyAI::init_board(const char* data[], char* response){
 #define PRIORITY_MOVE 1
 #define PRIORITY_EAT 100
 #define PRIORITY_SEARCHED 10000
+// #define PRIORITY_HISTORY 262144  // 2<<18
 
 MoveInfo::MoveInfo(const array<int, 32>& board, int from, int to){
 	from_location_no = from;
@@ -215,6 +217,12 @@ MoveInfo::MoveInfo(const array<int, 32>& board, int from, int to){
 	priority = raw_priority;
 }
 void MyAI::moveOrdering(const key128_t& boardkey, vector<MoveInfo>& Moves, const int depth){
+#ifdef USE_HISTORY
+	for(auto& m : Moves){
+		m.priority = historyHeuristic[m.num]; // * PRIORITY_HISTORY + m.priority % PRIORITY_HISTORY;
+	}
+#endif
+
 	sort(Moves.begin(), Moves.end(), [](const MoveInfo& a, const MoveInfo& b) {return a.priority > b.priority;});
 	if (depth == 0){
 		// set priority to rank to be printed
@@ -313,6 +321,8 @@ void MyAI::initBoardState()
 
 	rng = ProperlySeededRandomEngine<mt19937_64>();
 	transTable.init(rng);
+
+	historyHeuristic.fill(0);
 
 	Pirnf_Chessboard();
 }
@@ -422,6 +432,13 @@ void MyAI::generateMove(char move[6])
 
 	if (num_plys > 1) // uninitialized at first ply
 		moveStealing();
+
+#ifdef USE_HISTORY
+	// aging for history
+	for(auto& c: historyHeuristic){
+		c >>= 1;
+	}
+#endif
 
 	char op_move[6];
 	int op_start;
@@ -641,7 +658,7 @@ bool MyAI::cantWinCheck(const ChessBoard *chessboard, const int color, const boo
 		if (chessboard->Chess_Nums[op_color] > 1) // single chess cannot eat more
 			return true;
 		for (int i = chessboard->Heads[op_color]; i != -1; i = chessboard->Next[i]){
-			int delta = this->rel_distance[me*32+i];
+			int delta = rel_distance[me*32+i];
 			if(is_next != (delta % 2)){
 				assert((is_next && (delta % 2 == 0)) || (!is_next && (delta % 2 == 1)));
 				// next && delta even || !next && delta odd
@@ -731,7 +748,7 @@ void MyAI::Expand(const ChessBoard *chessboard, const int color, vector<MoveInfo
 		if(board[i] % 7 == 1)
 		{
 			for(int j = 0; j < 10; j++){
-				int dst = this->cannon_shoot[i*10+j];
+				int dst = cannon_shoot[i*10+j];
 				if(Referee(board,i,dst,color))
 				{
 					Result.emplace_back(board, i, dst);
@@ -835,7 +852,7 @@ bool MyAI::Referee(const array<int, 32>& chess, const int from_location_no, cons
 	{
 		IsCurrent = (to_chess_no == CHESS_EMPTY) || can_eat[from_chess_no * 14 + to_chess_no];
 	}
-	else if(to_chess_no == CHESS_EMPTY && this->rel_distance[from_location_no*32+to_location_no] == 1)//cannon walk
+	else if(to_chess_no == CHESS_EMPTY && rel_distance[from_location_no*32+to_location_no] == 1)//cannon walk
 	{
 		IsCurrent = true;
 	}	
@@ -1127,12 +1144,12 @@ double MyAI::evalColor(const ChessBoard *chessboard, const vector<MoveInfo> &Mov
 				int cj = chessboard->Board[j];
 				if (predator[ci * 14 + cj]){
 					// cj can eat ci
-					distance += (double)max(this->rel_distance[i*32+j], 2);
+					distance += (double)max(rel_distance[i*32+j], 2) * w_dist;
 				}
 			}
 		}
 	} else { distance = max_dist; }
-	value += distance * w_dist;
+	value += distance;
 	max_value += max_dist;
 #endif
 
@@ -1243,7 +1260,7 @@ bool MyAI::searchExtension(const ChessBoard& chessboard, const vector<MoveInfo> 
 		for(auto d: array<int,4>{-4,4,-1,1}){
 			if ((i+d >= 0) &&
 				(i+d < 32) &&
-				(this->rel_distance[i*32+i+d] == 1) &&
+				(rel_distance[i*32+i+d] == 1) &&
 				(board[i+d] >= 0) && 
 				(board[i+d] / 7 == op_color) && 
 				Referee(board,i+d,i,op_color)
@@ -1252,7 +1269,7 @@ bool MyAI::searchExtension(const ChessBoard& chessboard, const vector<MoveInfo> 
 		}
 		// cannon
 		for(int j = 0; j < 10; j++){
-			int src = this->cannon_shoot[i*10+j];
+			int src = cannon_shoot[i*10+j];
 			if((board[src] == op_color*7 + 1) &&
 				Referee(board,src,i,op_color)
 			)
@@ -1286,16 +1303,14 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 				MoveInfo& mv = entry.child_move;
 				assert((mv.from_location_no == mv.to_location_no) ||
 				Referee_debug(chessboard.Board, mv.from_location_no, mv.to_location_no, color, nullptr));
-				// int fail_no;
-				// if((mv.from_location_no != mv.to_location_no) && 
-				// !Referee_debug(chessboard.Board, mv.from_location_no, mv.to_location_no, color, &fail_no)){
-				// 	Pirnf_Chessboard();
-				// 	printf("move: %d->%d, fail: %d\n", mv.from_location_no, mv.to_location_no, fail_no);
-				// 	fflush(stdout);
-				// 	exit(1);
-				// }
 				move = mv;
-				return entry.value;
+
+				// cancel if this leads to draw
+				ChessBoard new_chessboard = chessboard;
+				key128_t new_boardkey = table.MakeMove(boardkey, mv, 0);
+				MakeMove(&new_chessboard, mv.num, 0); // 0: dummy
+				if(!skipDraw(new_chessboard, new_boardkey, depth, entry.all_moves.size(), 0, entry.value))
+					return entry.value;
 			}
 			else if (entry.vtype == ENTRY_LOWER){
 				alpha = max(alpha, entry.value);
@@ -1412,6 +1427,9 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 				entry.flip_choices = Choice;
 				table.insert(boardkey, color, entry);
 #endif
+#ifdef USE_HISTORY
+				historyHeuristic[move.num] += (1<<min(final_rdepth, 13));
+#endif
 				return m;
 			}
 			n = max(alpha, m) + 1;
@@ -1432,6 +1450,9 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 		entry.all_moves = Moves;
 		entry.flip_choices = Choice;
 		table.insert(boardkey, color, entry);
+#endif
+#ifdef USE_HISTORY
+		historyHeuristic[move.num] += (1<<min(final_rdepth, 13));
 #endif
 		return m;
 	}
