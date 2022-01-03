@@ -43,7 +43,7 @@
 #define USE_ASPIRATION
 #define USE_SEARCH_EXTENSION
 
-#define RANDOM_WALK
+// #define RANDOM_WALK
 #define DISTANCE
 
 using namespace std;
@@ -522,10 +522,6 @@ void removeFromBoard(ChessBoard* chessboard, const int at){
 		chessboard->Prev[right] = left;
 	chessboard->Prev[at] = -1;
 	chessboard->Next[at] = -1;
-	// if (chessboard->Heads[RED] == at)
-	// 	chessboard->Heads[RED] = right;
-	// if (chessboard->Heads[BLACK] == at)
-	// 	chessboard->Heads[BLACK] = right;
 	for(auto& h: chessboard->Heads){
 		if (h == at){
 			h = right;
@@ -623,7 +619,7 @@ void moveInBoard(ChessBoard *chessboard, const int src, const int dst){
 	}
 }
 
-bool cantWinCheck(const ChessBoard *chessboard, const int color, const bool is_next){
+bool MyAI::cantWinCheck(const ChessBoard *chessboard, const int color, const bool is_next){
 	/*
 	P C N R M G K
 	0 1 2 3 4 5 6
@@ -645,7 +641,7 @@ bool cantWinCheck(const ChessBoard *chessboard, const int color, const bool is_n
 		if (chessboard->Chess_Nums[op_color] > 1) // single chess cannot eat more
 			return true;
 		for (int i = chessboard->Heads[op_color]; i != -1; i = chessboard->Next[i]){
-			int delta = abs(me/4 - i/4) + abs(me%4 - i%4);
+			int delta = this->rel_distance[me*32+i];
 			if(is_next != (delta % 2)){
 				assert((is_next && (delta % 2 == 0)) || (!is_next && (delta % 2 == 1)));
 				// next && delta even || !next && delta odd
@@ -735,7 +731,7 @@ void MyAI::Expand(const ChessBoard *chessboard, const int color, vector<MoveInfo
 		if(board[i] % 7 == 1)
 		{
 			for(int j = 0; j < 10; j++){
-				int dst = this->cannon_shoot.at(i*10+j);
+				int dst = this->cannon_shoot[i*10+j];
 				if(Referee(board,i,dst,color))
 				{
 					Result.emplace_back(board, i, dst);
@@ -781,21 +777,38 @@ bool MyAI::Referee(const array<int, 32>& chess, const int from_location_no, cons
 	bool IsCurrent = true;
 	int from_chess_no = chess[from_location_no];
 	int to_chess_no = chess[to_location_no];
-	int from_row = from_location_no / 4;
-	int to_row = to_location_no / 4;
-	int from_col = from_location_no % 4;
-	int to_col = to_location_no % 4;
+	// int from_row = from_location_no / 4;
+	// int to_row = to_location_no / 4;
+	// int from_col = from_location_no % 4;
+	// int to_col = to_location_no % 4;
 
-	static array<bool, 7*7> can_eat{
-		/* 
-		p  c  n  r  m  g  k  */
-		1, 0, 0, 0, 0, 0, 1, // p -> pawn, king
-		0, 0, 0, 0, 0, 0, 0, // c -> need to jump first
-		1, 1, 1, 0, 0, 0, 0, // n
-		1, 1, 1, 1, 0, 0, 0, // r
-		1, 1, 1, 1, 1, 0, 0, // m
-		1, 1, 1, 1, 1, 1, 0, // g
-		0, 1, 1, 1, 1, 1, 1  // k -> !pawn
+	// static array<bool, 7*7> can_eat{
+	// 	/* 
+	// 	p  c  n  r  m  g  k  */
+	// 	1, 0, 0, 0, 0, 0, 1, // p -> pawn, king
+	// 	0, 0, 0, 0, 0, 0, 0, // c -> need to jump first
+	// 	1, 1, 1, 0, 0, 0, 0, // n
+	// 	1, 1, 1, 1, 0, 0, 0, // r
+	// 	1, 1, 1, 1, 1, 0, 0, // m
+	// 	1, 1, 1, 1, 1, 1, 0, // g
+	// 	0, 1, 1, 1, 1, 1, 1  // k -> !pawn
+	// };
+
+	static array<bool, 14*14> can_eat{
+		0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1,
+		1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+		1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+		1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+		1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+		1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 
+		0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 
 	};
 
 	/* Gaurantees:
@@ -807,8 +820,8 @@ bool MyAI::Referee(const array<int, 32>& chess, const int from_location_no, cons
 	assert(from_chess_no >= 0);
 	assert(from_location_no != to_location_no);
 	assert(
-		((from_chess_no % 7 == 1) && (from_row == to_row || from_col == to_col))||
-		((from_chess_no % 7 != 1) && (abs(from_row-to_row) + abs(from_col-to_col) == 1))
+		((from_chess_no % 7 == 1) && (from_location_no / 4 == to_location_no / 4 || from_location_no % 4 == to_location_no % 4))||
+		((from_chess_no % 7 != 1) && (abs(from_location_no / 4 - to_location_no / 4) + abs(from_location_no % 4-to_location_no % 4) == 1))
 	);
 
 
@@ -820,16 +833,18 @@ bool MyAI::Referee(const array<int, 32>& chess, const int from_location_no, cons
 	}
 	else if (from_chess_no % 7 != 1)// not cannon
 	{
-		IsCurrent = (to_chess_no == CHESS_EMPTY) || can_eat.at((from_chess_no % 7)*7 + (to_chess_no % 7));
+		IsCurrent = (to_chess_no == CHESS_EMPTY) || can_eat[from_chess_no * 14 + to_chess_no];
 	}
-	else if(to_chess_no == CHESS_EMPTY && abs(from_row-to_row) + abs(from_col-to_col)  == 1)//cannon walk
+	else if(to_chess_no == CHESS_EMPTY && this->rel_distance[from_location_no*32+to_location_no] == 1)//cannon walk
 	{
 		IsCurrent = true;
 	}	
 	else// cannon jump
 	{		
-		int row_gap = from_row-to_row;
-		int col_gap = from_col-to_col;
+		// int row_gap = from_row-to_row;
+		// int col_gap = from_col-to_col;
+		int row_gap = from_location_no / 4 - to_location_no / 4;
+		int col_gap = from_location_no % 4 - to_location_no % 4;
 		int between_Count = 0;
 		//row
 		if(row_gap == 0) 
@@ -1012,7 +1027,7 @@ bool MyAI::Referee_debug(const std::array<int, 32>& chess, const int from_locati
 }
 
 
-double evalColor(const ChessBoard *chessboard, const vector<MoveInfo> &Moves, const int color)
+double MyAI::evalColor(const ChessBoard *chessboard, const vector<MoveInfo> &Moves, const int color)
 {
 	array<double, 14> values{
 		1, 180, 6, 18, 90, 270, 810,
@@ -1086,16 +1101,23 @@ double evalColor(const ChessBoard *chessboard, const vector<MoveInfo> &Moves, co
 	double distance = 0;
 	const double w_dist = 1/16;
 	const double max_dist = 1344 * w_dist;
-	static array<bool, 7*7> predator{
+	static array<bool, 14*14> predator{
 		/* 
-		p  c  n  r  m  g  k  */
-		0, 1, 1, 1, 1, 1, 0, // p
-		0, 0, 1, 1, 1, 1, 1, // c
-		0, 0, 0, 1, 1, 1, 1, // n
-		0, 0, 0, 0, 1, 1, 1, // r
-		0, 0, 0, 0, 0, 1, 1, // m
-		0, 0, 0, 0, 0, 0, 1, // g
-		1, 0, 0, 0, 0, 0, 0  // k
+		p  c  n  r  m  g  k  P  C  N  R  M  G  K  */
+		0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, // p
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, // c
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, // n
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, // r
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, // m
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, // g
+		0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, // k
+		0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0,// P
+		0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,// C
+		0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,// N
+		0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,// R
+		0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0,// N
+		0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0,// G
+		1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,// K
 	};
 	if (chessboard->Chess_Nums[color] <= 8){
 		// only do this at endgame
@@ -1103,9 +1125,9 @@ double evalColor(const ChessBoard *chessboard, const vector<MoveInfo> &Moves, co
 			for (int j = chessboard->Heads[color^1]; j != -1; j = chessboard->Next[j]){
 				int ci = chessboard->Board[i];
 				int cj = chessboard->Board[j];
-				if (predator[ci * 7 + cj]){
+				if (predator[ci * 14 + cj]){
 					// cj can eat ci
-					distance += (double)max(abs(j/4 - i/4) + abs(j%4 - i%4), 2);
+					distance += (double)max(this->rel_distance[i*32+j], 2);
 				}
 			}
 		}
@@ -1221,7 +1243,7 @@ bool MyAI::searchExtension(const ChessBoard& chessboard, const vector<MoveInfo> 
 		for(auto d: array<int,4>{-4,4,-1,1}){
 			if ((i+d >= 0) &&
 				(i+d < 32) &&
-				(abs(i/4-(i+d)/4) + abs(i%4-(i+d)%4) == 1) &&
+				(this->rel_distance[i*32+i+d] == 1) &&
 				(board[i+d] >= 0) && 
 				(board[i+d] / 7 == op_color) && 
 				Referee(board,i+d,i,op_color)
@@ -1230,7 +1252,7 @@ bool MyAI::searchExtension(const ChessBoard& chessboard, const vector<MoveInfo> 
 		}
 		// cannon
 		for(int j = 0; j < 10; j++){
-			int src = this->cannon_shoot.at(i*10+j);
+			int src = this->cannon_shoot[i*10+j];
 			if((board[src] == op_color*7 + 1) &&
 				Referee(board,src,i,op_color)
 			)
