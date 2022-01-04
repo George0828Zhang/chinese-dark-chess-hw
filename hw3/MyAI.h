@@ -85,10 +85,10 @@ class TransPosition{
 	static const int TYPES = 15;
 	array<key128_t, POSITIONS*TYPES> salt; // 32 pos, 14+1 types
 	array<tsl::robin_map<key128_t, TableEntry>, 2> tables;
+public:
 	// array<size_t, 2> num_keys;
 	// size_t num_query;
-	// size_t num_hit;
-public:
+	// size_t num_short;
 	void init(mt19937_64& rng);
 	static inline int Convert(int chess);
 	key128_t compute_hash(const ChessBoard& chessboard) const;

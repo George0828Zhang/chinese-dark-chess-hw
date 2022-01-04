@@ -70,7 +70,8 @@ bool TransPosition::insert(const key128_t& key, const int color, const TableEntr
         return true;
     }		
     TableEntry& entry = tables[color][key];
-    if (update.vtype == ENTRY_EXACT && update.rdepth >= entry.rdepth){
+    if ((update.rdepth >= entry.rdepth) &&
+        (update.vtype == ENTRY_EXACT || entry.vtype != ENTRY_EXACT)){
         entry = update;
         return true;
     }
@@ -82,6 +83,7 @@ void TransPosition::clear_tables(const vector<int>& ids){
         // num_keys[i] = 0;
     }
     // num_query = 0;
+    // num_short = 0;
 	// num_hit = 0;
 }
 // void TransPosition::clone(const int to, const int from){

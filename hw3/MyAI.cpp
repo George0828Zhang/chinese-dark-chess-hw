@@ -38,13 +38,13 @@
 #define MAX_FLIPS_IN_SEARCH 2
 
 #define CLEAR_TRANS_FREQ 1
-#define USE_TRANSPOSITION
-#define USE_ASPIRATION
-#define USE_SEARCH_EXTENSION
-#define USE_KILLER
+// #define USE_TRANSPOSITION
+// #define USE_ASPIRATION
+// #define USE_SEARCH_EXTENSION
+// #define USE_KILLER
 
 // #define RANDOM_WALK
-#define DISTANCE
+// #define DISTANCE
 
 using namespace std;
 
@@ -186,7 +186,6 @@ bool MyAI::init_board(const char* data[], char* response){
 #define PRIORITY_EAT 100
 #define PRIORITY_SEARCHED 10000
 #define PRIORITY_KILLER 1000000
-// #define PRIORITY_HISTORY 262144  // 2<<18
 
 MoveInfo::MoveInfo(const array<int, 32>& board, int from, int to){
 	from_location_no = from;
@@ -196,21 +195,16 @@ MoveInfo::MoveInfo(const array<int, 32>& board, int from, int to){
 	num = from_location_no * 100 + to_location_no;
 	
 	// calculate priority
+	int from_id = (from_chess_no % 7)+1;
 	if (from_location_no == to_location_no){
 		raw_priority = PRIORITY_FLIP;
 	}
 	else if (to_chess_no >= 0){
-		int from_id = (from_chess_no % 7)+1; // both 1-7
 		int to_id = (to_chess_no % 7)+1;
 		raw_priority = (to_id*10 + (8-from_id)) * PRIORITY_EAT;
 	}
-	else{
-		int from_id = (from_chess_no % 7)+1;
-		int noise = 0;
-#ifdef RANDOM_WALK
-		noise = rng()%10;
-#endif
-		raw_priority = (from_id*10 + noise) * PRIORITY_MOVE;
+	else{		
+		raw_priority = from_id * PRIORITY_MOVE;
 	}
 	priority = raw_priority;
 }
@@ -486,12 +480,14 @@ void MyAI::generateMove(char move[6])
 	}
 
 #ifdef USE_TRANSPOSITION
-	// size_t n_query = this->transTable.get_num_query();
-	// size_t n_hit = this->transTable.get_num_hit();
-	// char msg[64];
+	// size_t n_query = this->transTable.num_query;
+	// size_t n_short = this->transTable.num_short;
+	// char msg[3][64];
 	// humanReadableByteCountSI(
-	// 	this->transTable.get_num_keys(RED) + this->transTable.get_num_keys(BLACK), msg);
-	// fprintf(stderr, "Table size: %s (entries), Hit rate: %lu / %lu (%.1lf%%)\n", msg, n_hit, n_query, n_hit / (double)n_query * 100);
+	// 	this->transTable.num_keys[RED] + this->transTable.num_keys[BLACK], msg[0]);
+	// humanReadableByteCountSI(n_short, msg[1]);
+	// humanReadableByteCountSI(n_query, msg[2]);
+	// fprintf(stderr, "Table size: %s (entries), Hit rate: %s / %s (%.1lf%%)\n", msg[0], msg[1], msg[2], n_short / (double)n_query * 100);
 
 	if (num_plys % CLEAR_TRANS_FREQ == 0)
 		this->transTable.clear_tables({RED,BLACK});
@@ -717,11 +713,15 @@ void MyAI::MakeMove(ChessBoard* chessboard, const char move[6])
 void MyAI::Expand(const ChessBoard *chessboard, const int color, vector<MoveInfo> &Result)
 {
 	if (color == 2) return;// initial board
+#ifndef NOASSERT
 	int n_chess = chessboard->Chess_Nums[color];
+#endif
 	const array<int, 32>& board = chessboard->Board;
 
 	for (int i = chessboard->Heads[color]; i != -1; i = chessboard->Next[i]){
+#ifndef NOASSERT
 		n_chess--;
+#endif
 		int row = i/4;
 		int col = i%4;
 		// Cannon
@@ -759,11 +759,13 @@ void MyAI::Expand(const ChessBoard *chessboard, const int color, vector<MoveInfo
 			}
 		}
 	}
+#ifndef NOASSERT
 	// n_chess should be num covered
 	for(int i = 0; i < 7; i++){
 		n_chess -= chessboard->CoverChess[color*7 + i];
 	}
 	assert(n_chess == 0);
+#endif
 }
 
 
@@ -774,22 +776,6 @@ bool MyAI::Referee(const array<int, 32>& chess, const int from_location_no, cons
 	bool IsCurrent = true;
 	int from_chess_no = chess[from_location_no];
 	int to_chess_no = chess[to_location_no];
-	// int from_row = from_location_no / 4;
-	// int to_row = to_location_no / 4;
-	// int from_col = from_location_no % 4;
-	// int to_col = to_location_no % 4;
-
-	// static array<bool, 7*7> can_eat{
-	// 	/* 
-	// 	p  c  n  r  m  g  k  */
-	// 	1, 0, 0, 0, 0, 0, 1, // p -> pawn, king
-	// 	0, 0, 0, 0, 0, 0, 0, // c -> need to jump first
-	// 	1, 1, 1, 0, 0, 0, 0, // n
-	// 	1, 1, 1, 1, 0, 0, 0, // r
-	// 	1, 1, 1, 1, 1, 0, 0, // m
-	// 	1, 1, 1, 1, 1, 1, 0, // g
-	// 	0, 1, 1, 1, 1, 1, 1  // k -> !pawn
-	// };
 
 	static array<bool, 14*14> can_eat{
 		0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1,
@@ -837,9 +823,7 @@ bool MyAI::Referee(const array<int, 32>& chess, const int from_location_no, cons
 		IsCurrent = true;
 	}	
 	else// cannon jump
-	{		
-		// int row_gap = from_row-to_row;
-		// int col_gap = from_col-to_col;
+	{
 		int row_gap = from_location_no / 4 - to_location_no / 4;
 		int col_gap = from_location_no % 4 - to_location_no % 4;
 		int between_Count = 0;
@@ -1069,10 +1053,10 @@ double MyAI::evalColor(const ChessBoard *chessboard, const vector<MoveInfo> &Mov
 	for(auto& m: Moves){
 		mobilities[m.from_location_no]++;
 	}
-	const double w_mob = 1/6;
+	const double w_mob = 1./6;
 	const double max_mobi = 60;
 #else
-	const double w_mob = 1/((810 + king_add_n_pawn[0])*3 + 270*2 + 180);
+	const double w_mob = 1./((810 + king_add_n_pawn[0])*3 + 270*2 + 180);
 	const double max_mobi = ((2*2+3*3) + 180*2*4 + 6*2*3 + 18*2*3 + 90*1*3 + (90*1 + 270*2 + 810*1 + king_add_n_pawn[0])*4)*w_mob;
 #endif	
 	double mobility = 0;
@@ -1096,7 +1080,7 @@ double MyAI::evalColor(const ChessBoard *chessboard, const vector<MoveInfo> &Mov
 		+16
 	*/
 	double distance = 0;
-	const double w_dist = 1/16;
+	const double w_dist = 1./16;
 	const double max_dist = 1344 * w_dist;
 	static array<bool, 14*14> predator{
 		/* 
@@ -1124,7 +1108,7 @@ double MyAI::evalColor(const ChessBoard *chessboard, const vector<MoveInfo> &Mov
 				int cj = chessboard->Board[j];
 				if (predator[ci * 14 + cj]){
 					// cj can eat ci
-					distance += (double)max(rel_distance[i*32+j], 2) * w_dist;
+					distance += max(rel_distance[i*32+j], 2) * w_dist;
 				}
 			}
 		}
@@ -1289,14 +1273,23 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 				ChessBoard new_chessboard = chessboard;
 				key128_t new_boardkey = table.MakeMove(boardkey, mv, 0);
 				MakeMove(&new_chessboard, mv.num, 0); // 0: dummy
-				if(!skipDraw(new_chessboard, new_boardkey, depth, entry.all_moves.size(), 0, entry.value))
+				if(!skipDraw(new_chessboard, new_boardkey, depth, entry.all_moves.size(), 0, entry.value)){
+					// table.num_short++;
 					return entry.value;
+				}
 			}
 			else if (entry.vtype == ENTRY_LOWER){
 				alpha = max(alpha, entry.value);
 			}
 			else{
 				beta = min(beta, entry.value);
+			}
+
+			// check whether alpha < beta! else it is cutoff!!
+			if (alpha >= beta){
+				move = entry.child_move;
+				// table.num_short++;
+				return entry.value;
 			}
 		}
 		Moves = entry.all_moves;
@@ -1312,6 +1305,9 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 
 	// flip
 	// first check whether should do flip
+	// TODO: BUGFIX: when we ignore flip moves,
+	// but store the move and choices in table,
+	// it would be incorrect
 	if ((remain_depth >= 3) &&
 		(!cached_moves) &&
 		(n_flips < MAX_FLIPS_IN_SEARCH) &&
@@ -1390,10 +1386,12 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 					}
 				}
 			}
+#ifndef NOASSERT
 			if ((t!=0) && ((depth&1) != (t < 0))){
 				fprintf(stderr, "Depth %d but value %.5lf\n", depth, t);
 			}
 			assert((t==0) || ((depth&1) == (t < 0)));
+#endif
 			Moves[i].priority = (t*(depth&1 ? -1 : 1) - OFFSET) * PRIORITY_SEARCHED + Moves[i].raw_priority;
 
 			if (m >= beta){
