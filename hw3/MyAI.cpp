@@ -37,6 +37,7 @@
 
 #define MAX_FLIPS_IN_SEARCH 2
 
+#define CLEAR_TRANS_FREQ 1
 #define USE_TRANSPOSITION
 #define USE_ASPIRATION
 #define USE_SEARCH_EXTENSION
@@ -353,6 +354,20 @@ void MyAI::openingMove(char move[6])
 	this->Pirnf_Chessboard();
 }
 
+template<class T>
+void humanReadableByteCountSI(T bytes, char msg[]) {
+    if (bytes < 1000) {
+        sprintf(msg, "%lu", bytes);
+    }
+    string ci = "kMGTPE";
+	int i = 0;
+    while (bytes >= 999950) {
+        bytes /= 1000;
+        i++;
+    }
+	sprintf(msg, "%.1lf%c", bytes / 1000.0, ci[i]);
+}
+
 void MyAI::generateMove(char move[6])
 {
 /* generateMove Call by reference: change src,dst */
@@ -384,8 +399,6 @@ void MyAI::generateMove(char move[6])
 	double prev_end = 0;
 
 	key128_t boardkey = this->transTable.compute_hash(this->main_chessboard);
-
-	this->transTable.clear_tables({RED,BLACK});
 
 #ifdef USE_KILLER
 	this->killer = KillerTable();
@@ -471,6 +484,18 @@ void MyAI::generateMove(char move[6])
 		fprintf(stderr, "Can't win.\n");
 		fflush(stderr);
 	}
+
+#ifdef USE_TRANSPOSITION
+	// size_t n_query = this->transTable.get_num_query();
+	// size_t n_hit = this->transTable.get_num_hit();
+	// char msg[64];
+	// humanReadableByteCountSI(
+	// 	this->transTable.get_num_keys(RED) + this->transTable.get_num_keys(BLACK), msg);
+	// fprintf(stderr, "Table size: %s (entries), Hit rate: %lu / %lu (%.1lf%%)\n", msg, n_hit, n_query, n_hit / (double)n_query * 100);
+
+	if (num_plys % CLEAR_TRANS_FREQ == 0)
+		this->transTable.clear_tables({RED,BLACK});
+#endif
 	
 	char chess_Start[4]="";
 	char chess_End[4]="";
@@ -1534,7 +1559,10 @@ double MyAI::estimatePlyTime(){
 	elapsed = (seconds*1000 + microseconds*1e-3);
 #endif
 
-	double real_exp_ply = max(EXPECT_PLYS, num_plys + 45 + this->main_chessboard.Chess_Nums[this->Color^1]);
+	int noeatflip = this->main_chessboard.NoEatFlip;
+	int my_num = this->main_chessboard.Chess_Nums[this->Color];
+	int opp_num = this->main_chessboard.Chess_Nums[this->Color^1];
+	double real_exp_ply = max(EXPECT_PLYS, num_plys + noeatflip + my_num+opp_num);
 
 	this->ply_time = min(MAX_PLY_TIME, (TOTAL_TIME - elapsed) / (real_exp_ply - num_plys + 1));
 	assert(this->ply_time <= MAX_PLY_TIME);

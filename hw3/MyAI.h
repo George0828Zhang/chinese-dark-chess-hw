@@ -85,6 +85,9 @@ class TransPosition{
 	static const int TYPES = 15;
 	array<key128_t, POSITIONS*TYPES> salt; // 32 pos, 14+1 types
 	array<tsl::robin_map<key128_t, TableEntry>, 2> tables;
+	// array<size_t, 2> num_keys;
+	// size_t num_query;
+	// size_t num_hit;
 public:
 	void init(mt19937_64& rng);
 	static inline int Convert(int chess);
@@ -93,7 +96,10 @@ public:
 	bool query(const key128_t& key, const int color, TableEntry& result);
 	bool insert(const key128_t& key, const int color, const TableEntry& update);
 	void clear_tables(const vector<int>& ids);
-	void clone(const int to, const int from);
+	// void clone(const int to, const int from);
+	// size_t get_num_keys(const int color);
+	// size_t get_num_query();
+	// size_t get_num_hit();
 };
 
 class KillerTable{
