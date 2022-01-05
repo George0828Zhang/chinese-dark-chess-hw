@@ -46,8 +46,6 @@ public:
 
 	int NoEatFlip;
 	vector<int> History;
-
-	bool isDraw;
 };
 
 class MoveInfo{

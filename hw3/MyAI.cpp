@@ -36,6 +36,7 @@
 #endif
 
 #define MAX_FLIPS_IN_SEARCH 2
+#define MIN_FLIP_INTERVAL 3
 
 #define CLEAR_TRANS_FREQ 1
 // #define USE_TRANSPOSITION
@@ -314,8 +315,6 @@ void MyAI::initBoardState()
 
 	rng = ProperlySeededRandomEngine<mt19937_64>();
 	transTable.init(rng);
-
-	main_chessboard.isDraw = false;
 
 	Pirnf_Chessboard();
 }
@@ -696,7 +695,6 @@ void MyAI::MakeMove(ChessBoard* chessboard, const int move, const int chess){
 	chessboard->History.push_back(move);
 	chessboard->cantWin[RED] = cantWinCheck(chessboard, RED, chessboard->Board[dst] / 7 == BLACK);
 	chessboard->cantWin[BLACK] = cantWinCheck(chessboard, BLACK, chessboard->Board[dst] / 7 == RED);
-	chessboard->isDraw = isDraw(chessboard);
 }
 
 void MyAI::MakeMove(ChessBoard* chessboard, const char move[6])
@@ -1150,7 +1148,7 @@ double MyAI::Evaluate(const ChessBoard* chessboard,
 			score += WIN - LOSE;
 		}
 		finish = true;
-	}else if(chessboard->isDraw){ // Draw
+	}else if(isDraw(chessboard)){ // Draw
 		// score += DRAW - DRAW;
 		finish = false;
 	}else{ // no conclusion
@@ -1317,7 +1315,7 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 	if ((remain_depth >= 3) &&
 		(!cached_moves) &&
 		(n_flips < MAX_FLIPS_IN_SEARCH) &&
-		((depth - prev_flip >= 3) || (n_flips == 0))
+		((depth - prev_flip >= MIN_FLIP_INTERVAL) || (n_flips == 0))
 	){
 		has_flips = true;
 		for(int j = 0; chessboard.Chess_Nums[2] > 0 && j < 14; j++){ // find remain chess
@@ -1338,7 +1336,7 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 		chessboard.Chess_Nums[RED] == 0 || // terminal node (no chess type)
 		chessboard.Chess_Nums[BLACK] == 0 || // terminal node (no chess type)
 		Moves.empty() || // terminal node (no move type)
-		chessboard.isDraw  // draw
+		isDraw(&chessboard)  // draw
 		){
 		this->node++;
 		// odd: *-1, even: *1
@@ -1366,6 +1364,8 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 				ChessBoard new_chessboard = chessboard;
 				MakeMove(&new_chessboard, Moves[i].num, 0); // 0: dummy
 				key128_t new_boardkey = table.MakeMove(boardkey, Moves[i], 0);
+				if(skipDraw(new_chessboard, new_boardkey, depth, Moves.size(), i, m))
+					continue;
 				int new_remain_depth = (
 					n_flips==0 &&	// dont extend chance search
 					depth > 3 &&	// dont extend first search
@@ -1373,9 +1373,6 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 					color == this->Color && // only do this for me
 					searchExtension(new_chessboard, Moves, color)) ? (remain_depth + 1) : remain_depth;
 				t = -Nega_scout(new_chessboard, new_boardkey, new_move, n_flips, prev_flip, color^1, depth+1, new_remain_depth-1, -n, -max(alpha, m));
-
-				if(skipDraw(new_chessboard, new_boardkey, depth, Moves.size(), i, m))
-					continue;
 
 				if(t > m){ 
 					if (n == beta || new_remain_depth < 3 || t >= beta){
@@ -1472,13 +1469,12 @@ double MyAI::Star0_EQU(const ChessBoard& chessboard, const key128_t& boardkey, c
 
 bool MyAI::skipDraw(const ChessBoard& new_chessboard, const key128_t& new_boardkey, const int depth, const int num_moves, const int move_i, const double cur_best){
 	if (
-		// (depth == 0) &&
-		(depth%2 == 0) &&
+		(depth == 0) &&
 		(!new_chessboard.cantWin[this->Color]) &&
 		(num_moves > 1) && // dont skip if this is the only move
 		(move_i == 0 || cur_best > -DBL_MAX) // if all previous moves leads to draw -> dont skip
 	) {
-		if(new_chessboard.isDraw)
+		if(isDraw(&new_chessboard))
 			return true;
 
 #ifdef USE_TRANSPOSITION
@@ -1492,7 +1488,7 @@ bool MyAI::skipDraw(const ChessBoard& new_chessboard, const key128_t& new_boardk
 			if (next_move.from_location_no == next_move.to_location_no)
 				return false;
 			MakeMove(&next_chessboard, next_move.num, 0); // 0: dummy
-			if(next_chessboard.isDraw)
+			if(isDraw(&next_chessboard))
 				return true;
 		}
 #endif
@@ -1502,6 +1498,10 @@ bool MyAI::skipDraw(const ChessBoard& new_chessboard, const key128_t& new_boardk
 
 
 bool MyAI::isDraw(const ChessBoard* chessboard){
+	// At least 12 to cause draw
+	if(chessboard->NoEatFlip < 12){
+		return false;
+	}
 	// No Eat Flip
 	if(chessboard->NoEatFlip >= NOEATFLIP_LIMIT){
 		return true;
@@ -1520,9 +1520,9 @@ bool MyAI::isDraw(const ChessBoard* chessboard){
 	const vector<int>& H = chessboard->History;
 
 	// lps array
-	array<int, 4096> dp = {};
+	array<int, NOEATFLIP_LIMIT> dp = {};
 	int i = 0; // len of current matched suffix
-	int j = 1; // current head (length of matched string)
+	int j = 2; // current head (length of matched string)
 
 	while(start-j >= end){
 		if (H[start-j] == H[start-i]){
