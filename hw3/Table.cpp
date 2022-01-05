@@ -1,6 +1,12 @@
-// #include <tsl/robin_map.h>
-
+#include <float.h>
 #include "MyAI.h"
+
+TableEntry::TableEntry():
+    value(-DBL_MAX),
+    rdepth(-1),
+    vtype(ENTRY_LOWER),
+    all_moves(),
+    flip_choices(){}
 
 // class TransPosition{
 // 	static const int POSITIONS = 32; 
@@ -55,12 +61,12 @@ key128_t TransPosition::MakeMove(const key128_t& other, const MoveInfo& move, co
     }
     return out;
 }
-bool TransPosition::query(const key128_t& key, const int color, TableEntry& result) {
+bool TransPosition::query(const key128_t& key, const int color, TableEntry* out) {
     // num_query++;
     if(tables[color].count(key) == 0)
         return false;
     // num_hit++;
-    result = tables[color][key];
+    *out = tables[color][key];
     return true;
 }
 bool TransPosition::insert(const key128_t& key, const int color, const TableEntry& update){

@@ -39,7 +39,7 @@
 #define MIN_FLIP_INTERVAL 3
 
 #define CLEAR_TRANS_FREQ 1
-// #define USE_TRANSPOSITION
+#define USE_TRANSPOSITION
 // #define USE_ASPIRATION
 // #define USE_SEARCH_EXTENSION
 // #define USE_KILLER
@@ -1136,8 +1136,11 @@ double MyAI::Evaluate(const ChessBoard* chessboard,
 	bool finish;
 	int legal_move_count = Moves.size();
 
-	if(legal_move_count == 0 && chessboard->Heads[2] != -1){
-		// at least one flip move is legal
+	if(
+		legal_move_count == 0 && 
+		chessboard->Heads[2] != -1 &&
+		chessboard->Chess_Nums[color] > 0){
+		// at least one flip move is legal, unless out of chess
 		legal_move_count = 1;
 	}
 
@@ -1207,7 +1210,6 @@ double MyAI::Evaluate(const ChessBoard* chessboard,
 }
 
 bool MyAI::searchExtension(const ChessBoard& chessboard, const vector<MoveInfo> &Moves, const int color){
-#ifdef USE_SEARCH_EXTENSION
 	// Extremely low mobility.	
 	if (Moves.size() < 3)
 		return true;
@@ -1244,7 +1246,6 @@ bool MyAI::searchExtension(const ChessBoard& chessboard, const vector<MoveInfo> 
 		}
 	}	
 	// The current best score is much lower than the value of your last ply.
-#endif
 	return false;
 }
 
@@ -1261,7 +1262,7 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 	TableEntry entry;
 	bool cached_moves = false;
 #ifdef USE_TRANSPOSITION
-	if(table.query(boardkey, color, entry)){
+	if(table.query(boardkey, color, &entry)){
 		assert(table.compute_hash(chessboard) == boardkey);
 
 		// hash hit
@@ -1366,13 +1367,25 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 				key128_t new_boardkey = table.MakeMove(boardkey, Moves[i], 0);
 				if(skipDraw(new_chessboard, new_boardkey, depth, Moves.size(), i, m))
 					continue;
-				int new_remain_depth = (
+				// remain_depth: deepening is 3 -> 4 -> 6 ...
+				// before: 2->me 1->op 
+				// after : 5->me 4->op 3->me 2->op
+				int new_remain_depth = remain_depth;
+				int new_n_flips = n_flips;
+
+#ifdef USE_SEARCH_EXTENSION
+				if (
 					n_flips==0 &&	// dont extend chance search
 					depth > 3 &&	// dont extend first search
-					remain_depth == 1 &&	// only extend horizon
+					remain_depth == 2 &&	// only extend horizon
 					color == this->Color && // only do this for me
-					searchExtension(new_chessboard, Moves, color)) ? (remain_depth + 1) : remain_depth;
-				t = -Nega_scout(new_chessboard, new_boardkey, new_move, n_flips, prev_flip, color^1, depth+1, new_remain_depth-1, -n, -max(alpha, m));
+					searchExtension(new_chessboard, Moves, color)
+				){
+					new_remain_depth = remain_depth + 2;
+					new_n_flips = 1; // Dirty hack to only extend once. (first condition above will fail)
+				}
+#endif
+				t = -Nega_scout(new_chessboard, new_boardkey, new_move, new_n_flips, prev_flip, color^1, depth+1, new_remain_depth-1, -n, -max(alpha, m));
 
 				if(t > m){ 
 					if (n == beta || new_remain_depth < 3 || t >= beta){
@@ -1382,7 +1395,7 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 						final_rdepth = new_remain_depth;
 					}
 					else{
-						t = -Nega_scout(new_chessboard, new_boardkey, new_move, n_flips, prev_flip, color^1, depth+1, new_remain_depth-1, -beta, -t);
+						t = -Nega_scout(new_chessboard, new_boardkey, new_move, new_n_flips, prev_flip, color^1, depth+1, new_remain_depth-1, -beta, -t);
 						m = t;
 						move = Moves[i];
 						if (depth == 0) this->prediction = new_move;
@@ -1390,12 +1403,7 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 					}
 				}
 			}
-#ifndef NOASSERT
-			if ((t!=0) && ((depth&1) != (t < 0))){
-				fprintf(stderr, "Depth %d but value %.5lf\n", depth, t);
-			}
-			assert((t==0) || ((depth&1) == (t < 0)));
-#endif
+
 			Moves[i].priority = (int)((t*(depth&1 ? -1 : 1) - OFFSET) * PRIORITY_SEARCHED) + Moves[i].raw_priority;
 
 			if (m >= beta){
@@ -1481,7 +1489,7 @@ bool MyAI::skipDraw(const ChessBoard& new_chessboard, const key128_t& new_boardk
 		int op_color = this->Color^1;
 		TransPosition& table = this->transTable;
 		TableEntry entry;
-		if(table.query(new_boardkey, op_color, entry)){
+		if(table.query(new_boardkey, op_color, &entry)){
 			// hash hit
 			ChessBoard next_chessboard = new_chessboard;
 			MoveInfo& next_move = entry.child_move;

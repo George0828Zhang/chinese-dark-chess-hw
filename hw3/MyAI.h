@@ -78,6 +78,7 @@ public:
 	MoveInfo child_move;
 	vector<MoveInfo> all_moves;
 	vector<int> flip_choices;
+	TableEntry();
 };
 
 class TransPosition{
@@ -93,7 +94,7 @@ public:
 	static inline int Convert(int chess);
 	key128_t compute_hash(const ChessBoard& chessboard) const;
 	key128_t MakeMove(const key128_t& other, const MoveInfo& move, const int chess = 0) const;
-	bool query(const key128_t& key, const int color, TableEntry& result);
+	bool query(const key128_t& key, const int color, TableEntry* out);
 	bool insert(const key128_t& key, const int color, const TableEntry& update);
 	void clear_tables(const vector<int>& ids);
 	// void clone(const int to, const int from);
