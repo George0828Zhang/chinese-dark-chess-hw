@@ -315,6 +315,7 @@ void MyAI::initBoardState()
 	rng = ProperlySeededRandomEngine<mt19937_64>();
 	transTable.init(rng);
 
+	main_chessboard.isDraw = false;
 
 	Pirnf_Chessboard();
 }
@@ -417,7 +418,7 @@ void MyAI::generateMove(char move[6])
 	double wall = this->ply_elapsed - prev_end;
 	prev_end = this->ply_elapsed;
 	expected = wall * 2;
-	fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s, Next: %s, Rank: %d, Wall: %1.3lf\n", (this->timeIsUp ? 'U' : 'D'),
+	fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s, Next: %s, Rank: %2d, Wall: %1.3lf\n", (this->timeIsUp ? 'U' : 'D'),
 			3, node, t - OFFSET, move, op_move, best_move_tmp.rank, wall / 1000);
 	fflush(stderr);
 
@@ -444,11 +445,14 @@ void MyAI::generateMove(char move[6])
 		double beta = t + threshold;
 		t_tmp = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, 0, -1, this->Color, 0, depth, alpha, beta);
 
-		if (t_tmp <= alpha){ // failed low
-			t_tmp = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, 0, -1, this->Color, 0, depth, -DBL_MAX, t_tmp);
+		int i = 0, j = 0;
+		for (; t_tmp <= alpha; i++){ // failed low
+			alpha = t_tmp - threshold * pow(10., i+1);
+			t_tmp = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, 0, -1, this->Color, 0, depth, alpha, t_tmp);
 		}
-		else if (t_tmp >= beta){ // failed high
-			t_tmp = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, 0, -1, this->Color, 0, depth, t_tmp, DBL_MAX);
+		for (; t_tmp >= beta; j++){ // failed high
+			beta = t_tmp + threshold * pow(10., j+1);
+			t_tmp = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, 0, -1, this->Color, 0, depth, t_tmp, beta);
 		}
 
 		// check score
@@ -470,8 +474,8 @@ void MyAI::generateMove(char move[6])
 		expected = wall * 2;
 		// U: Undone
 		// D: Done
-		fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s, Next: %s, Rank: %d, Wall: %1.3lf\n", (this->timeIsUp ? 'U' : 'D'),
-			depth, node, t - OFFSET, move, op_move, best_move_tmp.rank, wall / 1000);
+		fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s, Next: %s, Rank: %2d, Retry: %d, Wall: %1.3lf\n", (this->timeIsUp ? 'U' : 'D'),
+			depth, node, t - OFFSET, move, op_move, best_move_tmp.rank, i+j, wall / 1000);
 		fflush(stderr);
 	}
 	if(this->main_chessboard.cantWin[this->Color]){
@@ -692,6 +696,7 @@ void MyAI::MakeMove(ChessBoard* chessboard, const int move, const int chess){
 	chessboard->History.push_back(move);
 	chessboard->cantWin[RED] = cantWinCheck(chessboard, RED, chessboard->Board[dst] / 7 == BLACK);
 	chessboard->cantWin[BLACK] = cantWinCheck(chessboard, BLACK, chessboard->Board[dst] / 7 == RED);
+	chessboard->isDraw = isDraw(chessboard);
 }
 
 void MyAI::MakeMove(ChessBoard* chessboard, const char move[6])
@@ -1145,7 +1150,7 @@ double MyAI::Evaluate(const ChessBoard* chessboard,
 			score += WIN - LOSE;
 		}
 		finish = true;
-	}else if(isDraw(chessboard)){ // Draw
+	}else if(chessboard->isDraw){ // Draw
 		// score += DRAW - DRAW;
 		finish = false;
 	}else{ // no conclusion
@@ -1308,12 +1313,14 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 	// TODO: BUGFIX: when we ignore flip moves,
 	// but store the move and choices in table,
 	// it would be incorrect
+	bool has_flips = cached_moves;
 	if ((remain_depth >= 3) &&
 		(!cached_moves) &&
 		(n_flips < MAX_FLIPS_IN_SEARCH) &&
 		((depth - prev_flip >= 3) || (n_flips == 0))
 	){
-		for(int j = 0; j < 14; j++){ // find remain chess
+		has_flips = true;
+		for(int j = 0; chessboard.Chess_Nums[2] > 0 && j < 14; j++){ // find remain chess
 			if(chessboard.CoverChess[j] > 0){
 				Choice.push_back(j);
 			}
@@ -1331,7 +1338,7 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 		chessboard.Chess_Nums[RED] == 0 || // terminal node (no chess type)
 		chessboard.Chess_Nums[BLACK] == 0 || // terminal node (no chess type)
 		Moves.empty() || // terminal node (no move type)
-		isDraw(&chessboard) // draw
+		chessboard.isDraw  // draw
 		){
 		this->node++;
 		// odd: *-1, even: *1
@@ -1392,42 +1399,50 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 			}
 			assert((t==0) || ((depth&1) == (t < 0)));
 #endif
-			Moves[i].priority = (t*(depth&1 ? -1 : 1) - OFFSET) * PRIORITY_SEARCHED + Moves[i].raw_priority;
+			Moves[i].priority = (int)((t*(depth&1 ? -1 : 1) - OFFSET) * PRIORITY_SEARCHED) + Moves[i].raw_priority;
 
 			if (m >= beta){
 				// record the hash entry as a lower bound
 #ifdef USE_TRANSPOSITION
-				entry.value = m;
-				entry.rdepth = final_rdepth;
-				entry.vtype = ENTRY_LOWER;
-				entry.child_move = move;
-				entry.all_moves = Moves;
-				entry.flip_choices = Choice;
-				table.insert(boardkey, color, entry);
+				if (has_flips){
+					entry.value = m;
+					entry.rdepth = final_rdepth;
+					entry.vtype = ENTRY_LOWER;
+					entry.child_move = move;
+					entry.all_moves = Moves;
+					entry.flip_choices = Choice;
+					table.insert(boardkey, color, entry);
+				}
 #endif
 #ifdef USE_KILLER
 				this->killer.insert(move, depth);
 #endif
 				return m;
 			}
-			n = max(alpha, m) + 1;
+#ifdef DISTNACE
+			n = max(alpha, m) + 0.00041491510090903424;
+#else
+			n = max(alpha, m) + 0.0004298982894494268;
+#endif
 		}
 
 #ifdef USE_TRANSPOSITION
-		if (m > alpha){
-			// record the hash entry as an exact value m
-			entry.vtype = ENTRY_EXACT;
+		if (has_flips){
+			if (m > alpha){
+				// record the hash entry as an exact value m
+				entry.vtype = ENTRY_EXACT;
+			}
+			else{
+				// record the hash entry as an upper bound m;
+				entry.vtype = ENTRY_UPPER;
+			}
+			entry.value = m;
+			entry.rdepth = final_rdepth;
+			entry.child_move = move;
+			entry.all_moves = Moves;
+			entry.flip_choices = Choice;
+			table.insert(boardkey, color, entry);
 		}
-		else{
-			// record the hash entry as an upper bound m;
-			entry.vtype = ENTRY_UPPER;
-		}
-		entry.value = m;
-		entry.rdepth = final_rdepth;
-		entry.child_move = move;
-		entry.all_moves = Moves;
-		entry.flip_choices = Choice;
-		table.insert(boardkey, color, entry);
 #endif
 		return m;
 	}
@@ -1457,12 +1472,13 @@ double MyAI::Star0_EQU(const ChessBoard& chessboard, const key128_t& boardkey, c
 
 bool MyAI::skipDraw(const ChessBoard& new_chessboard, const key128_t& new_boardkey, const int depth, const int num_moves, const int move_i, const double cur_best){
 	if (
-		(depth == 0) &&
+		// (depth == 0) &&
+		(depth%2 == 0) &&
 		(!new_chessboard.cantWin[this->Color]) &&
 		(num_moves > 1) && // dont skip if this is the only move
 		(move_i == 0 || cur_best > -DBL_MAX) // if all previous moves leads to draw -> dont skip
 	) {
-		if(isDraw(&new_chessboard))
+		if(new_chessboard.isDraw)
 			return true;
 
 #ifdef USE_TRANSPOSITION
@@ -1476,7 +1492,7 @@ bool MyAI::skipDraw(const ChessBoard& new_chessboard, const key128_t& new_boardk
 			if (next_move.from_location_no == next_move.to_location_no)
 				return false;
 			MakeMove(&next_chessboard, next_move.num, 0); // 0: dummy
-			if(isDraw(&next_chessboard))
+			if(next_chessboard.isDraw)
 				return true;
 		}
 #endif
@@ -1492,34 +1508,43 @@ bool MyAI::isDraw(const ChessBoard* chessboard){
 	}
 
 	// Position Repetition
-	int last_idx = chessboard->History.size() - 1;
-	// -2: my previous ply
-	int idx = last_idx - 2;
+	int start = chessboard->History.size() - 1;
 	// All ply must be move type
-	int smallest_repetition_idx = last_idx - (chessboard->NoEatFlip / POSITION_REPETITION_LIMIT);
-	// check loop
-	while(idx >= 0 && idx >= smallest_repetition_idx){
-		if(chessboard->History[idx] == chessboard->History[last_idx]){
-			// how much ply compose one repetition
-			int repetition_size = last_idx - idx;
-			bool isEqual = true;
-			for(int i = 1; i < POSITION_REPETITION_LIMIT && isEqual; ++i){
-				for(int j = 0; j < repetition_size; ++j){
-					int src_idx = last_idx - j;
-					int checked_idx = last_idx - i*repetition_size - j;
-					if(chessboard->History[src_idx] != chessboard->History[checked_idx]){
-						isEqual = false;
-						break;
-					}
-				}
-			}
-			if(isEqual){
+	int end = max(start - chessboard->NoEatFlip + 1, 0);
+	
+	/* Use KMP to check if History[ end ... start ] is a repetition
+	   [a b a b a c]
+	              ^
+				  start
+	*/
+	const vector<int>& H = chessboard->History;
+
+	// lps array
+	array<int, 4096> dp = {};
+	int i = 0; // len of current matched suffix
+	int j = 1; // current head (length of matched string)
+
+	while(start-j >= end){
+		if (H[start-j] == H[start-i]){
+			// increase matched len by 1
+			i++;
+			dp[j] = i;
+			j++;
+
+			// is a repeat if dp[n-1] > 0 && n % (n - dp[n-1]) == 0;
+			if (j / (j - dp[j-1]) >= POSITION_REPETITION_LIMIT){
 				return true;
 			}
 		}
-		idx -= 2;
+		else if(i > 0){
+			// roll back to prev match
+			i = dp[i];                
+		}
+		else{
+			dp[j] = 0;
+			j++;
+		}
 	}
-
 	return false;
 }
 

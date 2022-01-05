@@ -46,6 +46,8 @@ public:
 
 	int NoEatFlip;
 	vector<int> History;
+
+	bool isDraw;
 };
 
 class MoveInfo{
@@ -220,7 +222,7 @@ private:
 	double Star0_EQU(const ChessBoard& chessboard, const key128_t& boardkey, const MoveInfo& move, const int n_flips, const vector<int>& Choice, const int color, const int depth, const int remain_depth);
 	// double SEE(const ChessBoard *chessboard, const int position, const int color);
 	bool searchExtension(const ChessBoard& chessboard, const vector<MoveInfo> &Moves, const int color);
-	bool isDraw(const ChessBoard* chessboard);
+	bool isDraw(const ChessBoard* chessboard);	
 	void moveOrdering(const key128_t& boardkey, vector<MoveInfo>& Moves, const int depth);
 	bool skipDraw(const ChessBoard& new_chessboard, const key128_t& newkey, const int depth, const int num_moves, const int move_i, const double cur_best);
 
