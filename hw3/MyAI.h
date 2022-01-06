@@ -58,7 +58,7 @@ public:
 	int priority;
 	int rank;
 	int num;
-	MoveInfo(){}
+	MoveInfo():from_location_no(0),to_location_no(0){}
 	MoveInfo(const array<int, 32>& board, int from, int to);
 };
 
@@ -87,9 +87,9 @@ class TransPosition{
 	array<key128_t, POSITIONS*TYPES> salt; // 32 pos, 14+1 types
 	array<tsl::robin_map<key128_t, TableEntry>, 2> tables;
 public:
-	// array<size_t, 2> num_keys;
-	// size_t num_query;
-	// size_t num_short;
+	array<size_t, 2> num_keys;
+	size_t num_query;
+	size_t num_hit;
 	void init(mt19937_64& rng);
 	static inline int Convert(int chess);
 	key128_t compute_hash(const ChessBoard& chessboard) const;
@@ -97,19 +97,30 @@ public:
 	bool query(const key128_t& key, const int color, TableEntry* out);
 	bool insert(const key128_t& key, const int color, const TableEntry& update);
 	void clear_tables(const vector<int>& ids);
-	// void clone(const int to, const int from);
-	// size_t get_num_keys(const int color);
-	// size_t get_num_query();
-	// size_t get_num_hit();
 };
 
 class KillerTable{
 	// [depth][m] -> depth*2 + i
 	array<MoveInfo, (MAX_DEPTH+1)*2> table;
 	array<bool, MAX_DEPTH+1> next_id;
+	size_t n_guess, n_correct;
 public:
 	KillerTable(){
 		next_id.fill(0);
+		clear_stats();
+	}
+	double success_rate(){
+		return (double)n_correct / n_guess * 100;
+	}
+	void clear_stats(){
+		n_guess = 0;
+		n_correct = 0;
+	}
+	void shift_up(size_t n){
+		/* erases the first n*2 elements and
+		move the rest upward in table */
+		if (n == 0) return;
+		std::move(table.begin() + n*2, table.end(), table.begin());
 	}
 	static inline bool same(const MoveInfo& a, const MoveInfo& b){
 		return (a.from_location_no == b.from_location_no) &&
@@ -119,6 +130,12 @@ public:
 		return same(table[depth*2], move) || same(table[depth*2+1], move);
 	}
 	void insert(const MoveInfo& move, const int depth){
+		if (is_killer(move, depth)){
+			n_correct++;
+			n_guess++;
+			return;
+		}
+		n_guess++;
 		table[depth*2 + next_id[depth]] = move;
 		next_id[depth] = !next_id[depth];
 	}
@@ -222,8 +239,9 @@ private:
 	// double SEE(const ChessBoard *chessboard, const int position, const int color);
 	bool searchExtension(const ChessBoard& chessboard, const vector<MoveInfo> &Moves, const int color);
 	bool isDraw(const ChessBoard* chessboard);	
+	bool isDraw_debug(const ChessBoard* chessboard);	
 	void moveOrdering(const key128_t& boardkey, vector<MoveInfo>& Moves, const int depth);
-	bool skipDraw(const ChessBoard& new_chessboard, const key128_t& newkey, const int depth, const int num_moves, const int move_i, const double cur_best);
+	// bool skipDraw(const ChessBoard& new_chessboard, const key128_t& newkey, const MoveInfo& nextmove, const int depth, const int num_moves, const int move_i, const double cur_best);
 
 	bool isTimeUp();
 	double estimatePlyTime();

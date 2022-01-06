@@ -35,14 +35,14 @@
 #define EXPECT_PLYS 180 / 2
 #endif
 
-#define MAX_FLIPS_IN_SEARCH 2
-#define MIN_FLIP_INTERVAL 3
+#define MAX_FLIPS_IN_SEARCH 3
+#define MIN_FLIP_INTERVAL 1
 
 #define CLEAR_TRANS_FREQ 1
-#define USE_TRANSPOSITION
+// #define USE_TRANSPOSITION
 // #define USE_ASPIRATION
 // #define USE_SEARCH_EXTENSION
-// #define USE_KILLER
+#define USE_KILLER
 
 // #define RANDOM_WALK
 // #define DISTANCE
@@ -394,9 +394,7 @@ void MyAI::generateMove(char move[6])
 
 	key128_t boardkey = this->transTable.compute_hash(this->main_chessboard);
 
-#ifdef USE_KILLER
-	this->killer = KillerTable();
-#endif
+	this->killer.shift_up(2); // 2 plys has gone by
 
 	char op_move[6];
 	int op_start;
@@ -417,8 +415,11 @@ void MyAI::generateMove(char move[6])
 	double wall = this->ply_elapsed - prev_end;
 	prev_end = this->ply_elapsed;
 	expected = wall * 2;
-	fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s, Next: %s, Rank: %2d, Wall: %1.3lf\n", (this->timeIsUp ? 'U' : 'D'),
-			3, node, t - OFFSET, move, op_move, best_move_tmp.rank, wall / 1000);
+
+	int killer_rate = (int)this->killer.success_rate();
+	this->killer.clear_stats();
+	fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s, Kills: %2d%%, Rank: %2d, Wall: %1.3lf, Next: %s\n", (this->timeIsUp ? 'U' : 'D'),
+			3, node, t - OFFSET, move, killer_rate, best_move_tmp.rank, wall / 1000, op_move);
 	fflush(stderr);
 
 	// deeeper search
@@ -473,8 +474,10 @@ void MyAI::generateMove(char move[6])
 		expected = wall * 2;
 		// U: Undone
 		// D: Done
-		fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s, Next: %s, Rank: %2d, Retry: %d, Wall: %1.3lf\n", (this->timeIsUp ? 'U' : 'D'),
-			depth, node, t - OFFSET, move, op_move, best_move_tmp.rank, i+j, wall / 1000);
+		killer_rate = (int)this->killer.success_rate();
+		this->killer.clear_stats();
+		fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s, Kills: %2d%%, Rank: %2d, Retry: %d, Wall: %1.3lf, Next: %s\n", (this->timeIsUp ? 'U' : 'D'),
+			depth, node, t - OFFSET, move, killer_rate, best_move_tmp.rank, i+j, wall / 1000, op_move);
 		fflush(stderr);
 	}
 	if(this->main_chessboard.cantWin[this->Color]){
@@ -483,14 +486,14 @@ void MyAI::generateMove(char move[6])
 	}
 
 #ifdef USE_TRANSPOSITION
-	// size_t n_query = this->transTable.num_query;
-	// size_t n_short = this->transTable.num_short;
-	// char msg[3][64];
-	// humanReadableByteCountSI(
-	// 	this->transTable.num_keys[RED] + this->transTable.num_keys[BLACK], msg[0]);
-	// humanReadableByteCountSI(n_short, msg[1]);
-	// humanReadableByteCountSI(n_query, msg[2]);
-	// fprintf(stderr, "Table size: %s (entries), Hit rate: %s / %s (%.1lf%%)\n", msg[0], msg[1], msg[2], n_short / (double)n_query * 100);
+	size_t n_query = this->transTable.num_query;
+	size_t n_hit = this->transTable.num_hit;
+	char msg[3][64];
+	humanReadableByteCountSI(
+		this->transTable.num_keys[RED] + this->transTable.num_keys[BLACK], msg[0]);
+	humanReadableByteCountSI(n_hit, msg[1]);
+	humanReadableByteCountSI(n_query, msg[2]);
+	fprintf(stderr, "Table size: %s (entries), Hit rate: %s / %s (%.1lf%%)\n", msg[0], msg[1], msg[2], n_hit / (double)n_query * 100);
 
 	if (num_plys % CLEAR_TRANS_FREQ == 0)
 		this->transTable.clear_tables({RED,BLACK});
@@ -1153,6 +1156,9 @@ double MyAI::Evaluate(const ChessBoard* chessboard,
 		finish = true;
 	}else if(isDraw(chessboard)){ // Draw
 		// score += DRAW - DRAW;
+		if (!this->main_chessboard.cantWin[this->Color]){
+			score += LOSE - WIN;
+		}
 		finish = false;
 	}else{ // no conclusion
 
@@ -1277,7 +1283,8 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 				ChessBoard new_chessboard = chessboard;
 				key128_t new_boardkey = table.MakeMove(boardkey, mv, 0);
 				MakeMove(&new_chessboard, mv.num, 0); // 0: dummy
-				if(!skipDraw(new_chessboard, new_boardkey, depth, entry.all_moves.size(), 0, entry.value)){
+				if(mv.from_location_no == mv.to_location_no ||
+					!isDraw(&new_chessboard)){
 					// table.num_short++;
 					return entry.value;
 				}
@@ -1365,11 +1372,9 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 				ChessBoard new_chessboard = chessboard;
 				MakeMove(&new_chessboard, Moves[i].num, 0); // 0: dummy
 				key128_t new_boardkey = table.MakeMove(boardkey, Moves[i], 0);
-				if(skipDraw(new_chessboard, new_boardkey, depth, Moves.size(), i, m))
-					continue;
 				// remain_depth: deepening is 3 -> 4 -> 6 ...
 				// before: 2->me 1->op 
-				// after : 5->me 4->op 3->me 2->op
+				// after : 4->me 3->op 2->me 1->op
 				int new_remain_depth = remain_depth;
 				int new_n_flips = n_flips;
 
@@ -1475,34 +1480,25 @@ double MyAI::Star0_EQU(const ChessBoard& chessboard, const key128_t& boardkey, c
 	return total / chessboard.Chess_Nums[2];
 }
 
-bool MyAI::skipDraw(const ChessBoard& new_chessboard, const key128_t& new_boardkey, const int depth, const int num_moves, const int move_i, const double cur_best){
-	if (
-		(depth == 0) &&
-		(!new_chessboard.cantWin[this->Color]) &&
-		(num_moves > 1) && // dont skip if this is the only move
-		(move_i == 0 || cur_best > -DBL_MAX) // if all previous moves leads to draw -> dont skip
-	) {
-		if(isDraw(&new_chessboard))
-			return true;
+// bool MyAI::skipDraw(const ChessBoard& new_chessboard, const key128_t& new_boardkey, const MoveInfo& next_move, const int depth, const int num_moves, const int move_i, const double cur_best){
+// 	if (
+// 		(depth % 2 == 0) &&
+// 		(!new_chessboard.cantWin[this->Color]) &&
+// 		(num_moves > 1) && // dont skip if this is the only move
+// 		(move_i == 0 || cur_best > -DBL_MAX) // if all previous moves leads to draw -> dont skip
+// 	) {
+// 		if(isDraw(&new_chessboard))
+// 			return true;
 
-#ifdef USE_TRANSPOSITION
-		int op_color = this->Color^1;
-		TransPosition& table = this->transTable;
-		TableEntry entry;
-		if(table.query(new_boardkey, op_color, &entry)){
-			// hash hit
-			ChessBoard next_chessboard = new_chessboard;
-			MoveInfo& next_move = entry.child_move;
-			if (next_move.from_location_no == next_move.to_location_no)
-				return false;
-			MakeMove(&next_chessboard, next_move.num, 0); // 0: dummy
-			if(isDraw(&next_chessboard))
-				return true;
-		}
-#endif
-	}
-	return false;
-}
+// 		ChessBoard next_chessboard = new_chessboard;
+// 		if (next_move.from_location_no == next_move.to_location_no)
+// 			return false;
+// 		MakeMove(&next_chessboard, next_move.num, 0); // 0: dummy
+// 		if(isDraw(&next_chessboard))
+// 			return true;
+// 	}
+// 	return false;
+// }
 
 
 bool MyAI::isDraw(const ChessBoard* chessboard){
@@ -1528,7 +1524,7 @@ bool MyAI::isDraw(const ChessBoard* chessboard){
 	const vector<int>& H = chessboard->History;
 
 	// lps array
-	array<int, NOEATFLIP_LIMIT> dp = {};
+	array<int, NOEATFLIP_LIMIT> dp = {0};
 	int i = 0; // len of current matched suffix
 	int j = 2; // current head (length of matched string)
 
@@ -1540,13 +1536,13 @@ bool MyAI::isDraw(const ChessBoard* chessboard){
 			j++;
 
 			// is a repeat if dp[n-1] > 0 && n % (n - dp[n-1]) == 0;
-			if (j / (j - dp[j-1]) >= POSITION_REPETITION_LIMIT){
+			if (j / (j - dp[j-1]) == POSITION_REPETITION_LIMIT){
 				return true;
 			}
 		}
 		else if(i > 0){
 			// roll back to prev match
-			i = dp[i];                
+			i = dp[i-1];                
 		}
 		else{
 			dp[j] = 0;

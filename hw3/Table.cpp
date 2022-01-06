@@ -62,17 +62,17 @@ key128_t TransPosition::MakeMove(const key128_t& other, const MoveInfo& move, co
     return out;
 }
 bool TransPosition::query(const key128_t& key, const int color, TableEntry* out) {
-    // num_query++;
+    num_query++;
     if(tables[color].count(key) == 0)
         return false;
-    // num_hit++;
+    num_hit++;
     *out = tables[color][key];
     return true;
 }
 bool TransPosition::insert(const key128_t& key, const int color, const TableEntry& update){
     if(tables[color].count(key) == 0){
         tables[color][key] = update;
-        // num_keys[color]++;
+        num_keys[color]++;
         return true;
     }		
     TableEntry& entry = tables[color][key];
@@ -86,22 +86,9 @@ bool TransPosition::insert(const key128_t& key, const int color, const TableEntr
 void TransPosition::clear_tables(const vector<int>& ids){
     for(auto i: ids){
         tables[i].clear();
-        // num_keys[i] = 0;
+        num_keys[i] = 0;
     }
-    // num_query = 0;
+    num_query = 0;
     // num_short = 0;
-	// num_hit = 0;
+	num_hit = 0;
 }
-// void TransPosition::clone(const int to, const int from){
-//     tables[to] = tables[from];
-//     num_keys[to] = num_keys[from];
-// }
-// size_t TransPosition::get_num_keys(const int color){
-//     return num_keys[color];
-// }
-// size_t TransPosition::get_num_query(){
-//     return num_query;
-// }
-// size_t TransPosition::get_num_hit(){
-//     return num_hit;
-// }
