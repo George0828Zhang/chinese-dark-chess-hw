@@ -29,6 +29,8 @@
 #define TOTAL_TIME 900000.
 #define MAX_PLY_TIME 15000.
 
+#define WALL_MULTIPLIER 2
+
 #ifdef FAST
 #define EXPECT_PLYS 250 / 2
 #else
@@ -39,10 +41,11 @@
 #define MIN_FLIP_INTERVAL 1
 
 #define CLEAR_TRANS_FREQ 1
-// #define USE_TRANSPOSITION
+#define USE_TRANSPOSITION
 // #define USE_ASPIRATION
 // #define USE_SEARCH_EXTENSION
-#define USE_KILLER
+#define USE_QUIESCENT
+// #define USE_KILLER
 
 // #define RANDOM_WALK
 // #define DISTANCE
@@ -414,7 +417,7 @@ void MyAI::generateMove(char move[6])
 
 	double wall = this->ply_elapsed - prev_end;
 	prev_end = this->ply_elapsed;
-	expected = wall * 2;
+	expected = wall * WALL_MULTIPLIER;
 
 	int killer_rate = (int)this->killer.success_rate();
 	this->killer.clear_stats();
@@ -432,7 +435,6 @@ void MyAI::generateMove(char move[6])
 		}
 
 		this->node = 0;
-		// MoveInfo best_move_tmp;
 		double t_tmp;
 
 		// run Nega-max
@@ -463,21 +465,21 @@ void MyAI::generateMove(char move[6])
 			StartPoint = best_move_tmp.from_location_no;
 			EndPoint   = best_move_tmp.to_location_no;
 			sprintf(move, "%c%c-%c%c",'a'+(StartPoint%4),'1'+(7-StartPoint/4),'a'+(EndPoint%4),'1'+(7-EndPoint/4));
-		}else {best_move_tmp.rank = -1;}
 
-		op_start = this->prediction.from_location_no;
-		op_end = this->prediction.to_location_no;
-		sprintf(op_move, "%c%c-%c%c",'a'+(op_start%4),'1'+(7-op_start/4),'a'+(op_end%4),'1'+(7-op_end/4));
+			op_start = this->prediction.from_location_no;
+			op_end = this->prediction.to_location_no;
+			sprintf(op_move, "%c%c-%c%c",'a'+(op_start%4),'1'+(7-op_start/4),'a'+(op_end%4),'1'+(7-op_end/4));
+		}else {best_move_tmp.rank = -1;}		
 
 		double wall = this->ply_elapsed - prev_end;
 		prev_end = this->ply_elapsed;
-		expected = wall * 2;
+		expected = wall * WALL_MULTIPLIER;
 		// U: Undone
 		// D: Done
 		killer_rate = (int)this->killer.success_rate();
 		this->killer.clear_stats();
-		fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s, Kills: %2d%%, Rank: %2d, Retry: %d, Wall: %1.3lf, Next: %s\n", (this->timeIsUp ? 'U' : 'D'),
-			depth, node, t - OFFSET, move, killer_rate, best_move_tmp.rank, i+j, wall / 1000, op_move);
+		fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s, Kills: %2d%%, Rank: %2d, Wall: %1.3lf, Next: %s\n", (this->timeIsUp ? 'U' : 'D'),
+			depth, node, t - OFFSET, move, killer_rate, best_move_tmp.rank, wall / 1000, op_move);
 		fflush(stderr);
 	}
 	if(this->main_chessboard.cantWin[this->Color]){
@@ -1232,27 +1234,123 @@ bool MyAI::searchExtension(const ChessBoard& chessboard, const vector<MoveInfo> 
 		int op_color = color^1;
 		int i = chessboard.Heads[color];
 
-		for(auto d: array<int,4>{-4,4,-1,1}){
-			if ((i+d >= 0) &&
-				(i+d < 32) &&
-				(rel_distance[i*32+i+d] == 1) &&
-				(board[i+d] >= 0) && 
-				(board[i+d] / 7 == op_color) && 
-				Referee(board,i+d,i,op_color)
-			)
-				return true;
-		}
-		// cannon
 		for(int j = 0; j < 10; j++){
 			int src = cannon_shoot[i*10+j];
-			if((board[src] == op_color*7 + 1) &&
+			if ((board[src] >= 0) && 
+				(board[src] / 7 == op_color) &&
+				(board[src] % 7 == 1 ||
+				 rel_distance[i*32+src] == 1) &&
 				Referee(board,src,i,op_color)
-			)
+			){
 				return true;
+			}
 		}
-	}	
+	}
 	// The current best score is much lower than the value of your last ply.
 	return false;
+}
+
+/* 
+Can only be called for a capturing move.
+Arguments:
+	chessboard:	the chessboard BEFORE the move
+	position:	the destination of the move
+	color:		the color of the source of the move
+*/
+double MyAI::SEE(const ChessBoard *chessboard, const int position, const int color){
+	/*
+	Assume it is red’s turn and there is a black piece bp at location.
+		capture piece at location using the first element w in R;
+		capture piece at location using the first element h in B; 
+		the net gain of material values during the exchange 
+	*/
+
+	assert((position >= 0 && position < 32));
+	assert(chessboard->Board[position] >= 0);
+	assert(chessboard->Board[position] / 7 == (color^1));
+	
+	array<int, 32> board = chessboard->Board; // copy
+
+	array<int, 16> MyCands;
+	array<int, 16> OpCands;
+	int my_num = 0;
+	int op_num = 0;
+
+	for(int j = 0; j < 10; j++){
+		int src = cannon_shoot[position*10+j];
+		int col = board[src] / 7;
+		if(board[src] >= 0 && (
+			board[src] % 7 == 1 ||
+			rel_distance[position*32+src] == 1
+		)){
+			if (col == color){
+				MyCands[my_num++] = src;
+			}
+			else{
+				OpCands[op_num++] = src;
+			}
+		}
+	}
+
+	array<double, 14> values{
+		1, 180, 6, 18, 90, 270, 810,
+		1, 180, 6, 18, 90, 270, 810};
+
+	static array<double, 6> king_add_n_pawn{  381, 111, 22, 5, 0, 0 };
+
+	// adjust king value
+	for(int c = 0; c < 2; c++){
+		int op_king = (!c) * 7 + 6;
+		int my_pawn = c * 7 + 0;
+		int n = chessboard->AliveChess[my_pawn];
+		values[op_king] += king_add_n_pawn[n];
+	}
+
+	// sort descending, will be accessed from the back
+	auto comp = [board,values] (int const& a, int const& b) -> bool
+    {
+       return values[board[a]] > values[board[b]]; // compare chess values
+    };
+	sort(MyCands.begin(), MyCands.begin() + my_num, comp);
+	sort(OpCands.begin(), OpCands.begin() + op_num, comp);
+	
+	for(int i = 0; i < my_num; i++){
+		assert(board[MyCands[i]] >= 0 && board[MyCands[i]] / 7 == color);
+		assert(i == 0 || values[board[MyCands[i]]] <= values[board[MyCands[i-1]]]);
+	}
+	for(int i = 0; i < op_num; i++){
+		assert(board[OpCands[i]] >= 0 && board[OpCands[i]] / 7 == (color^1));
+		assert(i == 0 || values[board[OpCands[i]]] <= values[board[OpCands[i-1]]]);
+	}
+
+	double gain = 0.0;
+	int op_color = color^1;
+
+	bool my_turn = true; // i go first
+	while((my_turn && my_num > 0) || (!my_turn && op_num > 0)){		
+		if (my_turn){
+			int from = MyCands[my_num-1];
+			if (Referee(board, from, position, color)){
+				gain += values[board[position]]; // capture piece
+				board[position] = board[from]; // place at position
+				board[from] = CHESS_EMPTY;
+				my_turn = false; // switch
+			}
+			my_num--; // remove from cands			
+		}
+		else{
+			// Opponent
+			int from = OpCands[op_num-1];
+			if (Referee(board, from, position, op_color)){
+				gain -= values[board[position]]; // capture piece
+				board[position] = board[from]; // place at position
+				board[from] = CHESS_EMPTY;
+				my_turn = true; // switch
+			}
+			op_num--; // remove from cands
+		}
+	}
+	return gain;
 }
 
 double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, MoveInfo& move, const int n_flips, const int prev_flip, const int color, const int depth, const int remain_depth, double alpha, double beta){
@@ -1281,7 +1379,6 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 
 				// cancel if this leads to draw
 				ChessBoard new_chessboard = chessboard;
-				key128_t new_boardkey = table.MakeMove(boardkey, mv, 0);
 				MakeMove(&new_chessboard, mv.num, 0); // 0: dummy
 				if(mv.from_location_no == mv.to_location_no ||
 					!isDraw(&new_chessboard)){
@@ -1338,9 +1435,15 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 	}
 	moveOrdering(boardkey, Moves, depth);
 
+	bool isQuiescent = true;
+#ifdef USE_QUIESCENT
+	int see_pos = chessboard.History.empty() ? -1 : (chessboard.History.back() % 100); 
+	isQuiescent = (see_pos == -1 || (remain_depth <= 0 && SEE(&chessboard, see_pos, color) <= 0));
+#endif
+
 	if(isTimeUp() || // time is up
 		depth >= MAX_DEPTH || // reach absolute depth
-		remain_depth <= 0 || // reach limit of depth 
+		(remain_depth <= 0 && isQuiescent) || // reach limit of depth 
 		chessboard.Chess_Nums[RED] == 0 || // terminal node (no chess type)
 		chessboard.Chess_Nums[BLACK] == 0 || // terminal node (no chess type)
 		Moves.empty() || // terminal node (no move type)

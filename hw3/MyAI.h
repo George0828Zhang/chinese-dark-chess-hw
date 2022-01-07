@@ -70,9 +70,7 @@ using key128_t = __uint128_t;
 
 class TableEntry{
 public:
-	// key128_t p;
 	double value;
-	// int depth;
 	int rdepth;
 	int vtype;
 	MoveInfo child_move;
@@ -110,15 +108,15 @@ public:
 		clear_stats();
 	}
 	double success_rate(){
-		return (double)n_correct / n_guess * 100;
+		return n_guess > 0 ? ((double)n_correct / n_guess * 100) : 0;
 	}
 	void clear_stats(){
 		n_guess = 0;
 		n_correct = 0;
-	}
+	}	
+	/* erases the first n*2 elements and
+	move the rest upward in table */
 	void shift_up(size_t n){
-		/* erases the first n*2 elements and
-		move the rest upward in table */
 		if (n == 0) return;
 		std::move(table.begin() + n*2, table.end(), table.begin());
 	}
@@ -236,13 +234,12 @@ private:
 	double Evaluate(const ChessBoard *chessboard, const vector<MoveInfo> &Moves, const int color);
 	double Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, MoveInfo& move, const int n_flips, const int prev_flip, const int color, const int depth, const int remain_depth, const double alpha, const double beta);
 	double Star0_EQU(const ChessBoard& chessboard, const key128_t& boardkey, const MoveInfo& move, const int n_flips, const vector<int>& Choice, const int color, const int depth, const int remain_depth);
-	// double SEE(const ChessBoard *chessboard, const int position, const int color);
+	double SEE(const ChessBoard *chessboard, const int position, const int color);
 	bool searchExtension(const ChessBoard& chessboard, const vector<MoveInfo> &Moves, const int color);
 	bool isDraw(const ChessBoard* chessboard);	
 	bool isDraw_debug(const ChessBoard* chessboard);	
 	void moveOrdering(const key128_t& boardkey, vector<MoveInfo>& Moves, const int depth);
-	// bool skipDraw(const ChessBoard& new_chessboard, const key128_t& newkey, const MoveInfo& nextmove, const int depth, const int num_moves, const int move_i, const double cur_best);
-
+	
 	bool isTimeUp();
 	double estimatePlyTime();
 	bool cantWinCheck(const ChessBoard *chessboard, const int color, const bool is_next);
