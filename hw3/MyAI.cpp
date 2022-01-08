@@ -29,7 +29,7 @@
 #define TOTAL_TIME 900000.
 #define MAX_PLY_TIME 15000.
 
-#define WALL_MULTIPLIER 2
+#define WALL_MULTIPLIER 4
 
 #ifdef FAST
 #define EXPECT_PLYS 250 / 2
@@ -42,10 +42,10 @@
 
 #define CLEAR_TRANS_FREQ 1
 #define USE_TRANSPOSITION
-// #define USE_ASPIRATION
+#define USE_ASPIRATION
 // #define USE_SEARCH_EXTENSION
 #define USE_QUIESCENT
-// #define USE_KILLER
+#define USE_KILLER
 
 // #define RANDOM_WALK
 // #define DISTANCE
