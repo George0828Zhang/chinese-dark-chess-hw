@@ -1,19 +1,21 @@
 # object file folder
 OBJ_FOLDER := bin
+SRC_FOLDER := src
+INC_FOLDER := src/include
 
 # check OS
 ifeq ($(OS), Windows_NT) # windows
-	G_PLUS_PLUS := g++ -std=gnu++11 -static -O3 -Wall -g -Iinclude
+	G_PLUS_PLUS := g++ -std=gnu++11 -static -O3 -Wall -g -I $(INC_FOLDER)
 	EXEC := final.exe
 	DELETE := del /f $(OBJ_FOLDER)\*.o $(EXEC)
 	MAKE_FOLDER := if not exist $(OBJ_FOLDER) mkdir $(OBJ_FOLDER)
 	OS_DEFINE := -DWINDOWS
 else
 	ifeq ($(shell uname), Darwin) # macOS
-		G_PLUS_PLUS := g++ -std=gnu++11 -O3 -Wall -g -Iinclude
+		G_PLUS_PLUS := g++ -std=gnu++11 -O3 -Wall -g -I $(INC_FOLDER)
 		OS_DEFINE := -DMACOS
 	else # linux
-		G_PLUS_PLUS := g++ -std=gnu++11 -static -O3 -Wall -g -Iinclude
+		G_PLUS_PLUS := g++ -std=gnu++11 -static -O3 -Wall -g -I $(INC_FOLDER)
 		OS_DEFINE := -DLINUX
 	endif
 	EXEC := exec.final
@@ -26,18 +28,18 @@ all : final
 
 # specify files
 MAIN := main
-MAIN_FILE := $(MAIN).cpp
+MAIN_FILE := $(SRC_FOLDER)/$(MAIN).cpp
 MAIN_OBJ := $(OBJ_FOLDER)/$(MAIN).o
 
 AI := MyAI
-AI_FILE := $(AI).cpp
-AI_HEADER := $(AI).h
+AI_FILE := $(SRC_FOLDER)/$(AI).cpp
+AI_HEADER := $(SRC_FOLDER)/$(AI).h
 AI_FLAG := 
 AI_OBJ := $(OBJ_FOLDER)/$(AI).o
 
 TABLE := Table
-TABLE_FILE := $(TABLE).cpp
-TABLE_HEADER := $(AI).h
+TABLE_FILE := $(SRC_FOLDER)/$(TABLE).cpp
+TABLE_HEADER := $(SRC_FOLDER)/$(AI).h
 TABLE_OBJ := $(OBJ_FOLDER)/$(TABLE).o
 
 # command
@@ -57,8 +59,8 @@ $(EXEC) : $(TABLE_OBJ) $(AI_OBJ) $(MAIN_FILE)
 # target
 final : $(EXEC)
 
-fast : AI_FLAG = -DFAST
-fast : final
+# fast : AI_FLAG = -DFAST
+# fast : final
 
 # clean object files and executable file
 .PHONY: clean
