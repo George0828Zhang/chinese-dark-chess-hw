@@ -33,12 +33,16 @@
 
 #ifdef FAST
 #define EXPECT_PLYS 250 / 2
+#define EXPECT_PLYS_LONG 320 / 2
 #else
 #define EXPECT_PLYS 180 / 2
+#define EXPECT_PLYS_LONG 320 / 2
 #endif
 
+#define USE_STAR1
 #define MAX_FLIPS_IN_SEARCH 3
 #define MIN_FLIP_INTERVAL 1
+#define MIN_R_DEPTH_TO_FLIP 3 
 
 #define CLEAR_TRANS_FREQ 1
 #define USE_TRANSPOSITION
@@ -47,7 +51,6 @@
 #define USE_QUIESCENT
 #define USE_KILLER
 
-// #define RANDOM_WALK
 // #define DISTANCE
 
 using namespace std;
@@ -185,8 +188,8 @@ bool MyAI::init_board(const char* data[], char* response){
 
 // *********************** MOVEINFO *********************** //
 
-#define PRIORITY_FLIP 0
-#define PRIORITY_MOVE 1
+#define PRIORITY_FLIP 1
+#define PRIORITY_MOVE 10
 #define PRIORITY_EAT 100
 #define PRIORITY_SEARCHED 10000
 #define PRIORITY_KILLER 1000000
@@ -210,6 +213,7 @@ MoveInfo::MoveInfo(const array<int, 32>& board, int from, int to){
 	else{		
 		raw_priority = from_id * PRIORITY_MOVE;
 	}
+	raw_priority += rng() % PRIORITY_MOVE;
 	priority = raw_priority;
 }
 void MyAI::moveOrdering(const key128_t& boardkey, vector<MoveInfo>& Moves, const int depth){
@@ -426,7 +430,7 @@ void MyAI::generateMove(char move[6])
 	fflush(stderr);
 
 	// deeeper search
-	for(int depth = 4; !isTimeUp() && depth <= MAX_DEPTH && t - OFFSET < WIN; depth+=2){
+	for(int depth = 4; !isTimeUp() && depth <= MAX_DEPTH && abs(t - OFFSET) < WIN; depth+=2){
 		if (this->ply_time - this->ply_elapsed < expected){
 			// will early stop -> give up now
 			fprintf(stderr, "Early stopped. Expected: %1.3lf, Remain: %1.3lf\n", expected / 1000, (this->ply_time - this->ply_elapsed) / 1000);
@@ -1417,7 +1421,7 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 	// but store the move and choices in table,
 	// it would be incorrect
 	bool has_flips = cached_moves;
-	if ((remain_depth >= 3) &&
+	if ((remain_depth >= MIN_R_DEPTH_TO_FLIP) &&
 		(!cached_moves) &&
 		(n_flips < MAX_FLIPS_IN_SEARCH) &&
 		((depth - prev_flip >= MIN_FLIP_INTERVAL) || (n_flips == 0))
@@ -1462,7 +1466,11 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 			double t = -DBL_MAX;			
 			if (Moves[i].from_location_no == Moves[i].to_location_no){
 				// Chance node
+#ifdef USE_STAR1
+				t = Star1_EQU(chessboard, boardkey, Moves[i], n_flips, Choice, color, depth, remain_depth, max(alpha, m), beta);
+#else
 				t = Star0_EQU(chessboard, boardkey, Moves[i], n_flips, Choice, color, depth, remain_depth);
+#endif
 
 				if(t > m){ 
 					// TODO: don't always use best
@@ -1583,26 +1591,49 @@ double MyAI::Star0_EQU(const ChessBoard& chessboard, const key128_t& boardkey, c
 	return total / chessboard.Chess_Nums[2];
 }
 
-// bool MyAI::skipDraw(const ChessBoard& new_chessboard, const key128_t& new_boardkey, const MoveInfo& next_move, const int depth, const int num_moves, const int move_i, const double cur_best){
-// 	if (
-// 		(depth % 2 == 0) &&
-// 		(!new_chessboard.cantWin[this->Color]) &&
-// 		(num_moves > 1) && // dont skip if this is the only move
-// 		(move_i == 0 || cur_best > -DBL_MAX) // if all previous moves leads to draw -> dont skip
-// 	) {
-// 		if(isDraw(&new_chessboard))
-// 			return true;
+double MyAI::Star1_EQU(const ChessBoard& chessboard, const key128_t& boardkey, const MoveInfo& move, const int n_flips, const vector<int>& Choice, const int color, const int depth, const int remain_depth, const double alpha, const double beta){
+	// me: [0, 2*(WIN+BONUS)], opp: [-2*(WIN+BONUS), 0]
+	double v_min = (depth&1) ? -2*OFFSET : 0;
+	double v_max = (depth&1) ? 0 : 2*OFFSET;
 
-// 		ChessBoard next_chessboard = new_chessboard;
-// 		if (next_move.from_location_no == next_move.to_location_no)
-// 			return false;
-// 		MakeMove(&next_chessboard, next_move.num, 0); // 0: dummy
-// 		if(isDraw(&next_chessboard))
-// 			return true;
-// 	}
-// 	return false;
-// }
+	double c = chessboard.Chess_Nums[2];
 
+	double A = c * (alpha - v_max); // the ( ) / w + v_max is done in loop
+	double B = c * (beta - v_min); // the ( ) / w + v_max is done in loop
+
+	double m = v_min;
+	double M = v_max;
+
+	// if (depth == 0)
+	// 	fprintf(stderr, "[debug] pos: %d\n", move.from_location_no);
+	TransPosition& table = this->transTable;
+	MoveInfo new_move;
+	double total = 0;
+	int trim = max( min(
+			(int)log2(Choice.size()+1) * 2 - 1,
+			 7), 1);
+	for(auto& k: Choice){
+		ChessBoard new_chessboard = chessboard;
+		key128_t new_boardkey = table.MakeMove(boardkey, move, k);
+		MakeMove(&new_chessboard, move.num, k);
+
+		assert(-min(B, v_max) <= -max(A, v_min));
+		double w = chessboard.CoverChess[k];
+		A = A / w + v_max;
+		B = B / w + v_min;
+		int prev_flip = depth;
+		double t = -Nega_scout(new_chessboard, new_boardkey, new_move, n_flips+1, prev_flip, color^1, depth+1, remain_depth-trim, -min(B, v_max), -max(A, v_min));
+		
+		m += w / c * (t - v_min);
+		M += w / c * (t - v_max);
+		if (t >= B) return m;
+		if (t <= A) return M;
+		total += w * t;
+		A = w * (A - t); // the ( ) / w + v_max is done above
+		B = w * (B - t); // the ( ) / w + v_max is done above
+	}
+	return total / c;
+}
 
 bool MyAI::isDraw(const ChessBoard* chessboard){
 	// At least 12 to cause draw
@@ -1692,7 +1723,13 @@ double MyAI::estimatePlyTime(){
 	int noeatflip = this->main_chessboard.NoEatFlip;
 	int my_num = this->main_chessboard.Chess_Nums[this->Color];
 	int opp_num = this->main_chessboard.Chess_Nums[this->Color^1];
-	double real_exp_ply = max(EXPECT_PLYS, num_plys + noeatflip + my_num+opp_num);
+	double real_exp_ply = num_plys + noeatflip + my_num + opp_num;
+	if (real_exp_ply < EXPECT_PLYS){
+		real_exp_ply = EXPECT_PLYS;
+	}
+	else if (real_exp_ply < EXPECT_PLYS_LONG){
+		real_exp_ply = EXPECT_PLYS_LONG;
+	}	
 
 	this->ply_time = min(MAX_PLY_TIME, (TOTAL_TIME - elapsed) / (real_exp_ply - num_plys + 1));
 	assert(this->ply_time <= MAX_PLY_TIME);

@@ -234,6 +234,7 @@ private:
 	double Evaluate(const ChessBoard *chessboard, const vector<MoveInfo> &Moves, const int color);
 	double Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, MoveInfo& move, const int n_flips, const int prev_flip, const int color, const int depth, const int remain_depth, const double alpha, const double beta);
 	double Star0_EQU(const ChessBoard& chessboard, const key128_t& boardkey, const MoveInfo& move, const int n_flips, const vector<int>& Choice, const int color, const int depth, const int remain_depth);
+	double Star1_EQU(const ChessBoard& chessboard, const key128_t& boardkey, const MoveInfo& move, const int n_flips, const vector<int>& Choice, const int color, const int depth, const int remain_depth, const double alpha, const double beta);
 	double SEE(const ChessBoard *chessboard, const int position, const int color);
 	bool searchExtension(const ChessBoard& chessboard, const vector<MoveInfo> &Moves, const int color);
 	bool isDraw(const ChessBoard* chessboard);	
