@@ -31,13 +31,13 @@
 
 #define WALL_MULTIPLIER 4
 
-#ifdef FAST
+// #ifdef FAST
 #define EXPECT_PLYS 250 / 2
 #define EXPECT_PLYS_LONG 320 / 2
-#else
-#define EXPECT_PLYS 180 / 2
-#define EXPECT_PLYS_LONG 320 / 2
-#endif
+// #else
+// #define EXPECT_PLYS 180 / 2
+// #define EXPECT_PLYS_LONG 320 / 2
+// #endif
 
 #define USE_STAR1
 #define MAX_FLIPS_IN_SEARCH 3
@@ -1706,24 +1706,10 @@ bool MyAI::isTimeUp(){
 }
 
 double MyAI::estimatePlyTime(){
-	double elapsed; // ms
-	
-	// design for different os
-#ifdef WINDOWS
-	clock_t end = clock();
-	elapsed = (end - origin);
-#else
-	struct timeval end;
-	gettimeofday(&end, 0);
-	long seconds = end.tv_sec - origin.tv_sec;
-	long microseconds = end.tv_usec - origin.tv_usec;
-	elapsed = (seconds*1000 + microseconds*1e-3);
-#endif
-
 	int noeatflip = this->main_chessboard.NoEatFlip;
 	int my_num = this->main_chessboard.Chess_Nums[this->Color];
 	int opp_num = this->main_chessboard.Chess_Nums[this->Color^1];
-	double real_exp_ply = num_plys + noeatflip + my_num + opp_num;
+	double real_exp_ply = this->num_plys + noeatflip + my_num + opp_num;
 	if (real_exp_ply < EXPECT_PLYS){
 		real_exp_ply = EXPECT_PLYS;
 	}
@@ -1731,7 +1717,10 @@ double MyAI::estimatePlyTime(){
 		real_exp_ply = EXPECT_PLYS_LONG;
 	}	
 
-	this->ply_time = min(MAX_PLY_TIME, (TOTAL_TIME - elapsed) / (real_exp_ply - num_plys + 1));
+	double timeLeft = this->Color == RED ? this->Red_Time : this->Black_Time;
+	if (timeLeft < 0) timeLeft = TOTAL_TIME;
+
+	this->ply_time = min(MAX_PLY_TIME, timeLeft / (real_exp_ply - this->num_plys + 1));
 	assert(this->ply_time <= MAX_PLY_TIME);
 	assert(this->ply_time >= 0);
 	return this->ply_time;
