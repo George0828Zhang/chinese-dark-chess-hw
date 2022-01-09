@@ -454,11 +454,11 @@ void MyAI::generateMove(char move[6])
 		int i = 0, j = 0;
 		for (; t_tmp <= alpha; i++){ // failed low
 			alpha = t_tmp - threshold * pow(10., i+1);
-			t_tmp = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, 0, -1, this->Color, 0, depth, alpha, t_tmp);
+			t_tmp = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, 0, -1, this->Color, 0, depth, alpha, t_tmp+1e-7);
 		}
 		for (; t_tmp >= beta; j++){ // failed high
 			beta = t_tmp + threshold * pow(10., j+1);
-			t_tmp = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, 0, -1, this->Color, 0, depth, t_tmp, beta);
+			t_tmp = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, 0, -1, this->Color, 0, depth, t_tmp-1e-7, beta);
 		}
 
 		// check score
@@ -1520,7 +1520,7 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 				}
 			}
 
-			Moves[i].priority = (int)((t*(depth&1 ? -1 : 1) - OFFSET) * PRIORITY_SEARCHED) + Moves[i].raw_priority;
+			// Moves[i].priority = (int)((t*(depth&1 ? -1 : 1) - OFFSET) * PRIORITY_SEARCHED) + Moves[i].raw_priority;
 
 			if (m >= beta){
 				// record the hash entry as a lower bound
