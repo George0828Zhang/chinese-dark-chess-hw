@@ -16,7 +16,7 @@ TableEntry::TableEntry():
 // public:
 
 void TransPosition::init(mt19937_64& rng){
-    for (uint i = 0; i < salt.size(); i++){
+    for (unsigned int i = 0; i < salt.size(); i++){
         uint64_t lo = rng();
         uint64_t hi = rng();
         salt[i] = lo + ((key128_t)hi << 64);
@@ -34,9 +34,13 @@ key128_t TransPosition::compute_hash(const ChessBoard& chessboard) const {
         int piece = Convert(chessboard.Board[i]);
         h ^= salt[i * TYPES + piece];
     }
+    for(int i = 0; i < COVERS; i++){
+        int num = chessboard.CoverChess[i];
+        h ^= salt.at((POSITIONS+i) * TYPES + num);
+    }
     return h;
 }
-key128_t TransPosition::MakeMove(const key128_t& other, const MoveInfo& move, const int chess) const {
+key128_t TransPosition::MakeMove(const key128_t& other, const MoveInfo& move, const int chess = 0, const int cover_num = 0) const {
     key128_t out = other;
 
     int src = move.from_location_no;
@@ -49,6 +53,8 @@ key128_t TransPosition::MakeMove(const key128_t& other, const MoveInfo& move, co
         static const int cover = Convert(CHESS_COVER);
         out ^= salt[src * TYPES + cover]; // remove cover
         out ^= salt[src * TYPES + chess]; // add chess
+        out ^= salt[(POSITIONS+chess) * TYPES + cover_num]; // remove cover_num
+        out ^= salt[(POSITIONS+chess) * TYPES + cover_num - 1]; // add cover_num - 1
     }
     else if (dst_chess == CHESS_EMPTY){// move
         out ^= salt[src * TYPES + src_chess]; // remove from src

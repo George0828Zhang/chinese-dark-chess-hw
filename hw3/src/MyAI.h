@@ -41,7 +41,7 @@ public:
 	array<int, 14> CoverChess;
 	array<int, 14> AliveChess;
 	array<int, 3> Heads;
-	array<int, 3> Chess_Nums;
+	array<int, 4> Chess_Nums;
 	array<bool, 2> cantWin;
 
 	int NoEatFlip;
@@ -82,7 +82,8 @@ public:
 class TransPosition{
 	static const int POSITIONS = 32; 
 	static const int TYPES = 15;
-	array<key128_t, POSITIONS*TYPES> salt; // 32 pos, 14+1 types
+	static const int COVERS = 14; 
+	array<key128_t, (POSITIONS+COVERS)*TYPES> salt; // 32 pos, 14+1 types
 	array<tsl::robin_map<key128_t, TableEntry>, 2> tables;
 public:
 	array<size_t, 2> num_keys;
@@ -91,7 +92,7 @@ public:
 	void init(mt19937_64& rng);
 	static inline int Convert(int chess);
 	key128_t compute_hash(const ChessBoard& chessboard) const;
-	key128_t MakeMove(const key128_t& other, const MoveInfo& move, const int chess = 0) const;
+	key128_t MakeMove(const key128_t& other, const MoveInfo& move, const int chess, const int cover_num) const;
 	bool query(const key128_t& key, const int color, TableEntry* out);
 	bool insert(const key128_t& key, const int color, const TableEntry& update);
 	void clear_tables(const vector<int>& ids);
