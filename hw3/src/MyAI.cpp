@@ -15,6 +15,8 @@
 #define assert(x) ((void)0)
 #endif
 
+#define LARGE_NUM 999999
+
 #define WIN 1.0
 #define DRAW 0.2
 #define LOSE 0.0
@@ -45,7 +47,7 @@
 #define MIN_R_DEPTH_TO_FLIP 3 
 
 #define CLEAR_TRANS_FREQ 1
-#define USE_TRANSPOSITION
+// #define USE_TRANSPOSITION
 #define USE_ASPIRATION
 // #define USE_SEARCH_EXTENSION
 #define USE_QUIESCENT
@@ -380,7 +382,7 @@ void MyAI::generateMove(char move[6])
 	int StartPoint = 0;
 	int EndPoint = 0;
 
-	double t = -DBL_MAX;
+	double t = -LARGE_NUM;
 #ifdef WINDOWS
 	begin = clock();
 	if (num_plys==0)
@@ -410,7 +412,7 @@ void MyAI::generateMove(char move[6])
 	// depth-3 search
 	this->node = 0;
 	MoveInfo best_move_tmp;
-	t = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, 0, -1, this->Color, 0, 3, -DBL_MAX, DBL_MAX);
+	t = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, 0, -1, this->Color, 0, 3, -LARGE_NUM, LARGE_NUM);
 	StartPoint = best_move_tmp.from_location_no;
 	EndPoint   = best_move_tmp.to_location_no;
 	sprintf(move, "%c%c-%c%c",'a'+(StartPoint%4),'1'+(7-StartPoint/4),'a'+(EndPoint%4),'1'+(7-EndPoint/4));
@@ -445,7 +447,7 @@ void MyAI::generateMove(char move[6])
 #ifdef USE_ASPIRATION
 		const double threshold = 0.005;
 #else
-		const double threshold = DBL_MAX - OFFSET;
+		const double threshold = LARGE_NUM - OFFSET;
 #endif
 		double alpha = t - threshold;
 		double beta = t + threshold;
@@ -641,7 +643,7 @@ bool MyAI::cantWinCheck(const ChessBoard *chessboard, const int color, const boo
 		return true;
 
 	// single chess and not cover
-	if (my_num == 1 && chessboard->Chess_Nums[2] == 0){
+	if (my_num == 1 && chessboard->Heads[color] != -1){
 		int me = chessboard->Heads[color];
 		if (chessboard->Chess_Nums[op_color] > 1) // single chess cannot eat more
 			return true;
@@ -1271,7 +1273,7 @@ double MyAI::SEE(const ChessBoard *chessboard, const int position, const int col
 
 	assert((position >= 0 && position < 32));
 	assert(chessboard->Board[position] >= 0);
-	assert(chessboard->Board[position] / 7 == (color^1));
+	bool my_turn = (chessboard->Board[position] / 7 == (color^1)); // i go first if position is op
 	
 	array<int, 32> board = chessboard->Board; // copy
 
@@ -1330,7 +1332,6 @@ double MyAI::SEE(const ChessBoard *chessboard, const int position, const int col
 	double gain = 0.0;
 	int op_color = color^1;
 
-	bool my_turn = true; // i go first
 	while((my_turn && my_num > 0) || (!my_turn && op_num > 0)){		
 		if (my_turn){
 			int from = MyCands[my_num-1];
@@ -1457,13 +1458,13 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 		// odd: *-1, even: *1
 		return Evaluate(&chessboard, Moves, color) * (depth&1 ? -1 : 1);
 	}else{
-		double m = -DBL_MAX;
+		double m = -LARGE_NUM;
 		double n = beta;
 		MoveInfo new_move;
 		int final_rdepth = remain_depth;
 		// search deeper
 		for(uint i = 0; i < Moves.size(); i++){ // move
-			double t = -DBL_MAX;			
+			double t = -LARGE_NUM;			
 			if (Moves[i].from_location_no == Moves[i].to_location_no){
 				// Chance node
 #ifdef USE_STAR1
@@ -1584,7 +1585,7 @@ double MyAI::Star0_EQU(const ChessBoard& chessboard, const key128_t& boardkey, c
 
 		// int next_col = (color == 2) ? ((k / 7)^1) : (color^1);
 		int prev_flip = depth;
-		double t = -Nega_scout(new_chessboard, new_boardkey, new_move, n_flips+1, prev_flip, color^1, depth+1, remain_depth-trim, -DBL_MAX, DBL_MAX);
+		double t = -Nega_scout(new_chessboard, new_boardkey, new_move, n_flips+1, prev_flip, color^1, depth+1, remain_depth-trim, -LARGE_NUM, LARGE_NUM);
 		total += chessboard.CoverChess[k] * t;
 	}
 	assert(chessboard.Chess_Nums[2] > 0);
@@ -1597,6 +1598,7 @@ double MyAI::Star1_EQU(const ChessBoard& chessboard, const key128_t& boardkey, c
 	double v_max = (depth&1) ? 0 : 2*OFFSET;
 
 	double c = chessboard.Chess_Nums[2];
+	assert(c > 0);
 
 	double A = c * (alpha - v_max); // the ( ) / w + v_max is done in loop
 	double B = c * (beta - v_min); // the ( ) / w + v_max is done in loop
@@ -1617,10 +1619,11 @@ double MyAI::Star1_EQU(const ChessBoard& chessboard, const key128_t& boardkey, c
 		key128_t new_boardkey = table.MakeMove(boardkey, move, k);
 		MakeMove(&new_chessboard, move.num, k);
 
-		assert(-min(B, v_max) <= -max(A, v_min));
 		double w = chessboard.CoverChess[k];
+		assert(w > 0);
 		A = A / w + v_max;
-		B = B / w + v_min;
+		B = B / w + v_min + 1e-7;
+		assert(-min(B, v_max) <= -max(A, v_min));
 		int prev_flip = depth;
 		double t = -Nega_scout(new_chessboard, new_boardkey, new_move, n_flips+1, prev_flip, color^1, depth+1, remain_depth-trim, -min(B, v_max), -max(A, v_min));
 		
