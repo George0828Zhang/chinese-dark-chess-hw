@@ -29,6 +29,7 @@
 
 #define TOTAL_TIME 900000.
 #define MAX_PLY_TIME 15000.
+#define MIN_PLY_TIME 1500.
 
 #define WALL_MULTIPLIER 4
 
@@ -1718,7 +1719,7 @@ double MyAI::estimatePlyTime(){
 	else{
 		this->stalls += 2;
 	}
-	int stallpenalty = this->stalls / 5 * 60;	
+	int stallpenalty = this->stalls / 5 * 30;
 	int my_num = this->main_chessboard.Chess_Nums[this->Color];
 	int opp_num = this->main_chessboard.Chess_Nums[this->Color^1];
 	double real_exp_ply = this->num_plys + stallpenalty + my_num + opp_num;
@@ -1732,7 +1733,7 @@ double MyAI::estimatePlyTime(){
 	double timeLeft = this->Color == RED ? this->Red_Time : this->Black_Time;
 	if (timeLeft < 0) timeLeft = TOTAL_TIME;
 
-	this->ply_time = min(MAX_PLY_TIME, timeLeft / (real_exp_ply - this->num_plys + 1));
+	this->ply_time = max(MIN_PLY_TIME, min(MAX_PLY_TIME, timeLeft / (real_exp_ply - this->num_plys + 1)));
 	assert(this->ply_time <= MAX_PLY_TIME);
 	assert(this->ply_time >= 0);
 	return this->ply_time;
