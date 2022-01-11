@@ -41,7 +41,7 @@ public:
 	array<int, 14> CoverChess;
 	array<int, 14> AliveChess;
 	array<int, 3> Heads;
-	array<int, 3> Chess_Nums;
+	array<int, 4> Chess_Nums;
 	array<bool, 2> cantWin;
 
 	int NoEatFlip;
@@ -202,6 +202,7 @@ private:
 	struct timeval origin;
 #endif
 	int num_plys;
+	int stalls;
 
 	// next ply
 	double ply_time;

@@ -16,7 +16,7 @@ TableEntry::TableEntry():
 // public:
 
 void TransPosition::init(mt19937_64& rng){
-    for (uint i = 0; i < salt.size(); i++){
+    for (unsigned int i = 0; i < salt.size(); i++){
         uint64_t lo = rng();
         uint64_t hi = rng();
         salt[i] = lo + ((key128_t)hi << 64);
