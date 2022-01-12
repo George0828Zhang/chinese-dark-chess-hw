@@ -1,12 +1,6 @@
 #include <float.h>
 #include "MyAI.h"
 
-TableEntry::TableEntry():
-    value(-DBL_MAX),
-    rdepth(-1),
-    vtype(ENTRY_LOWER),
-    all_moves(),
-    flip_choices(){}
 
 // class TransPosition{
 // 	static const int POSITIONS = 32; 
@@ -21,7 +15,7 @@ void TransPosition::init(mt19937_64& rng){
         uint64_t hi = rng();
         salt[i] = lo + ((key128_t)hi << 64);
     }
-    clear_tables({0,1});
+    clear_tables();
 }
 inline int TransPosition::Convert(int chess) {
     // COVER -1 -> 15
@@ -83,11 +77,11 @@ bool TransPosition::insert(const key128_t& key, const int color, const TableEntr
     }
     return false;
 }
-void TransPosition::clear_tables(const vector<int>& ids){
-    for(auto i: ids){
-        tables[i].clear();
-        num_keys[i] = 0;
-    }
+void TransPosition::clear_tables(){
+    tables[0].clear();
+    num_keys[0] = 0;
+    tables[1].clear();
+    num_keys[1] = 0;
     num_query = 0;
     // num_short = 0;
 	num_hit = 0;

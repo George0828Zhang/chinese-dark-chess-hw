@@ -8,9 +8,7 @@
 #include <time.h>
 #include <stdint.h>
 #include <array>
-#include <vector>
 #include <tsl/robin_map.h>
-#include <unordered_map>
 #include <random>
 
 #define RED 0
@@ -20,6 +18,7 @@
 #define COMMAND_NUM 19
 
 #define MAX_DEPTH 31
+#define MAX_MOVES 16*4
 
 using namespace std;
 
@@ -45,7 +44,8 @@ public:
 	array<bool, 2> cantWin;
 
 	int NoEatFlip;
-	vector<int> History;
+	array<int, 1024> History;
+	int History_size;
 };
 
 class MoveInfo{
@@ -59,7 +59,7 @@ public:
 	int rank;
 	int num;
 	MoveInfo():from_location_no(0),to_location_no(0){}
-	MoveInfo(const array<int, 32>& board, int from, int to);
+	void update(const array<int, 32>& board, int from, int to);
 };
 
 #define ENTRY_EXACT 0
@@ -74,9 +74,8 @@ public:
 	int rdepth;
 	int vtype;
 	MoveInfo child_move;
-	vector<MoveInfo> all_moves;
-	vector<int> flip_choices;
-	TableEntry();
+	array<MoveInfo, MAX_MOVES> all_moves;
+	int move_num;
 };
 
 class TransPosition{
@@ -94,7 +93,7 @@ public:
 	key128_t MakeMove(const key128_t& other, const MoveInfo& move, const int chess = 0) const;
 	bool query(const key128_t& key, const int color, TableEntry* out);
 	bool insert(const key128_t& key, const int color, const TableEntry& update);
-	void clear_tables(const vector<int>& ids);
+	void clear_tables();
 };
 
 class KillerTable{
@@ -230,17 +229,17 @@ private:
 	void MakeMove(ChessBoard* chessboard, const char move[6]);
 	bool Referee(const array<int, 32>& board, const int Startoint, const int EndPoint, const int color);
 	bool Referee_debug(const array<int, 32>& board, const int Startoint, const int EndPoint, const int color, int* fail_no);
-	void Expand(const ChessBoard *chessboard, const int color, vector<MoveInfo> &Result);
-	double evalColor(const ChessBoard *chessboard, const vector<MoveInfo> &Moves, const int color);
-	double Evaluate(const ChessBoard *chessboard, const vector<MoveInfo> &Moves, const int color);
+	void Expand(const ChessBoard *chessboard, const int color, array<MoveInfo, MAX_MOVES> &Result, int* move_num);
+	double evalColor(const ChessBoard *chessboard, const array<MoveInfo, MAX_MOVES> &Moves, const int move_num, const int color);
+	double Evaluate(const ChessBoard *chessboard, const array<MoveInfo, MAX_MOVES> &Moves, const int move_num, const int color);
 	double Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, MoveInfo& move, const int n_flips, const int prev_flip, const int color, const int depth, const int remain_depth, const double alpha, const double beta);
-	double Star0_EQU(const ChessBoard& chessboard, const key128_t& boardkey, const MoveInfo& move, const int n_flips, const vector<int>& Choice, const int color, const int depth, const int remain_depth);
-	double Star1_EQU(const ChessBoard& chessboard, const key128_t& boardkey, const MoveInfo& move, const int n_flips, const vector<int>& Choice, const int color, const int depth, const int remain_depth, const double alpha, const double beta);
+	double Star0_EQU(const ChessBoard& chessboard, const key128_t& boardkey, const MoveInfo& move, const int n_flips, const array<int, 14>& Choice, const int choice_num, const int color, const int depth, const int remain_depth);
+	double Star1_EQU(const ChessBoard& chessboard, const key128_t& boardkey, const MoveInfo& move, const int n_flips, const array<int, 14>& Choice, const int choice_num, const int color, const int depth, const int remain_depth, const double alpha, const double beta);
 	double SEE(const ChessBoard *chessboard, const int position, const int color);
-	bool searchExtension(const ChessBoard& chessboard, const vector<MoveInfo> &Moves, const int color);
+	bool searchExtension(const ChessBoard& chessboard, const int move_num, const int color);
 	bool isDraw(const ChessBoard* chessboard);	
 	bool isDraw_debug(const ChessBoard* chessboard);	
-	void moveOrdering(const key128_t& boardkey, vector<MoveInfo>& Moves, const int depth);
+	void moveOrdering(const key128_t& boardkey, array<MoveInfo, MAX_MOVES> &Moves, const int move_num, const int depth);
 	
 	bool isTimeUp();
 	double estimatePlyTime();

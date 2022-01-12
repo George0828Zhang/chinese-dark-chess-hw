@@ -6,7 +6,6 @@
 #endif
 #include "MyAI.h"
 #include <algorithm>
-#include <cmath>
 #include <cassert>
 
 #define NOASSERT
@@ -197,7 +196,7 @@ bool MyAI::init_board(const char* data[], char* response){
 #define PRIORITY_SEARCHED 10000
 #define PRIORITY_KILLER 1000000
 
-MoveInfo::MoveInfo(const array<int, 32>& board, int from, int to){
+void MoveInfo::update(const array<int, 32>& board, int from, int to){
 	from_location_no = from;
 	to_location_no = to;
 	from_chess_no = board[from];
@@ -219,18 +218,18 @@ MoveInfo::MoveInfo(const array<int, 32>& board, int from, int to){
 	raw_priority += rng() % PRIORITY_MOVE;
 	priority = raw_priority;
 }
-void MyAI::moveOrdering(const key128_t& boardkey, vector<MoveInfo>& Moves, const int depth){
+void MyAI::moveOrdering(const key128_t& boardkey, array<MoveInfo, MAX_MOVES> &Moves, const int move_num, const int depth){
 #ifdef USE_KILLER
-	for(auto& m: Moves){
-		if(this->killer.is_killer(m, depth)){
-			m.priority = PRIORITY_KILLER + m.raw_priority;
+	for(int i = 0; i < move_num; i++){
+		if(this->killer.is_killer(Moves[i], depth)){
+			Moves[i].priority = PRIORITY_KILLER + Moves[i].raw_priority;
 		}
 	}
 #endif
-	sort(Moves.begin(), Moves.end(), [](const MoveInfo& a, const MoveInfo& b) {return a.priority > b.priority;});
+	sort(Moves.begin(), Moves.begin() + move_num, [](const MoveInfo& a, const MoveInfo& b) {return a.priority > b.priority;});
 	if (depth == 0){
 		// set priority to rank to be printed
-		for(unsigned int i = 0; i < Moves.size(); i++){
+		for(int i = 0; i < move_num; i++){
 			Moves[i].rank = i; 
 		}
 	}
@@ -320,7 +319,7 @@ void MyAI::initBoardState()
 		main_chessboard.Next[i] = i == 31 ? -1 : (i + 1);
 	}
 
-	main_chessboard.History.reserve(1024);
+	main_chessboard.History_size = 0;
 	num_plys = 0;
 	stalls = 0;
 
@@ -506,7 +505,7 @@ void MyAI::generateMove(char move[6])
 	fprintf(stderr, "Table size: %s (entries), Hit rate: %s / %s (%.1lf%%)\n", msg[0], msg[1], msg[2], n_hit / (double)n_query * 100);
 
 	if (num_plys % CLEAR_TRANS_FREQ == 0)
-		this->transTable.clear_tables({RED,BLACK});
+		this->transTable.clear_tables();
 #endif
 	
 	char chess_Start[4]="";
@@ -663,7 +662,7 @@ bool MyAI::cantWinCheck(const ChessBoard *chessboard, const int color, const boo
 		For each type, if number of pieces that can capture it
 		is less than the number of pieces of that type, we loses
 	*/
-	std::vector<int> myGreater(8, 0);
+	array<int, 8> myGreater{0};
 	myGreater[7] = chessboard->AliveChess[color * 7 + 1]; // cannon
 	for (int i = 6; i >= 0; i--)
 	{
@@ -705,7 +704,7 @@ void MyAI::MakeMove(ChessBoard* chessboard, const int move, const int chess){
 		chessboard->Board[src] = CHESS_EMPTY;
 		moveInBoard(chessboard, src, dst);
 	}
-	chessboard->History.push_back(move);
+	chessboard->History[chessboard->History_size++] = move;
 	chessboard->cantWin[RED] = cantWinCheck(chessboard, RED, chessboard->Board[dst] / 7 == BLACK);
 	chessboard->cantWin[BLACK] = cantWinCheck(chessboard, BLACK, chessboard->Board[dst] / 7 == RED);
 }
@@ -726,13 +725,14 @@ void MyAI::MakeMove(ChessBoard* chessboard, const char move[6])
 	Pirnf_Chessboard();
 }
 
-void MyAI::Expand(const ChessBoard *chessboard, const int color, vector<MoveInfo> &Result)
+void MyAI::Expand(const ChessBoard *chessboard, const int color, array<MoveInfo, MAX_MOVES> &Result, int* move_num)
 {
 	if (color == 2) return;// initial board
 #ifndef NOASSERT
 	int n_chess = chessboard->Chess_Nums[color];
 #endif
 	const array<int, 32>& board = chessboard->Board;
+	int n_move = 0;
 
 	for (int i = chessboard->Heads[color]; i != -1; i = chessboard->Next[i]){
 #ifndef NOASSERT
@@ -747,7 +747,7 @@ void MyAI::Expand(const ChessBoard *chessboard, const int color, vector<MoveInfo
 				int dst = cannon_shoot[i*10+j];
 				if(Referee(board,i,dst,color))
 				{
-					Result.emplace_back(board, i, dst);
+					Result[n_move++].update(board, i, dst);
 				}
 			}
 		}
@@ -756,25 +756,26 @@ void MyAI::Expand(const ChessBoard *chessboard, const int color, vector<MoveInfo
 			// up
 			if(row > 0 && Referee(board,i,i-4,color))
 			{
-				Result.emplace_back(board, i, i-4);
+				Result[n_move++].update(board, i, i-4);
 			}
 			// down
 			if(row < 7 && Referee(board,i,i+4,color))
 			{
-				Result.emplace_back(board, i, i+4);
+				Result[n_move++].update(board, i, i+4);
 			}
 			// left
 			if(col > 0 && Referee(board,i,i-1,color))
 			{
-				Result.emplace_back(board, i, i-1);
+				Result[n_move++].update(board, i, i-1);
 			}
 			// right
 			if(col < 3 && Referee(board,i,i+1,color))
 			{
-				Result.emplace_back(board, i, i+1);
+				Result[n_move++].update(board, i, i+1);
 			}
 		}
 	}
+	*move_num = n_move;
 #ifndef NOASSERT
 	// n_chess should be num covered
 	for(int i = 0; i < 7; i++){
@@ -1024,7 +1025,7 @@ bool MyAI::Referee_debug(const std::array<int, 32>& chess, const int from_locati
 }
 
 
-double MyAI::evalColor(const ChessBoard *chessboard, const vector<MoveInfo> &Moves, const int color)
+double MyAI::evalColor(const ChessBoard *chessboard, const array<MoveInfo, MAX_MOVES> &Moves, const int move_num, const int color)
 {
 	array<double, 14> values{
 		1, 180, 6, 18, 90, 270, 810,
@@ -1038,24 +1039,29 @@ double MyAI::evalColor(const ChessBoard *chessboard, const vector<MoveInfo> &Mov
 	static array<double, 6> king_add_n_pawn{  381, 111, 22, 5, 0, 0 };
 
 	// adjust king value
-	for(int c = 0; c < 2; c++){
-		int op_king = (!c) * 7 + 6;
-		int my_pawn = c * 7 + 0;
-		int n = chessboard->AliveChess[my_pawn];
-		values[op_king] += king_add_n_pawn[n];
-	}
+	// for(int c = 0; c < 2; c++){
+	// 	int op_king = (!c) * 7 + 6;
+	// 	int my_pawn = c * 7 + 0;
+	// 	int n = chessboard->AliveChess[my_pawn];
+	// 	values[op_king] += king_add_n_pawn[n];
+	// }
+	values[color * 7 + 6] += king_add_n_pawn[chessboard->AliveChess[(color^1)*7 + 0]];
 
 	double max_value = 1*5 + 180*2 + 6*2 + 18*2 + 90*2 + 270*2 + 810*1 + king_add_n_pawn[0];
 
+	// for (int i = chessboard->Heads[color]; i != -1; i = chessboard->Next[i])
+	// {
+	// 	value += values[chessboard->Board[i]];
+	// }
+	// // covered
+	// for(int i = 0; i < 7; i++){
+	// 	int p = color * 7 + i;
+	// 	value += chessboard->CoverChess[p] * values[p];
+	// }
 	double value = 0;
-	for (int i = chessboard->Heads[color]; i != -1; i = chessboard->Next[i])
-	{
-		value += values[chessboard->Board[i]];
-	}
-	// covered
 	for(int i = 0; i < 7; i++){
 		int p = color * 7 + i;
-		value += chessboard->CoverChess[p] * values[p];
+		value += chessboard->AliveChess[p] * values[p];
 	}
 
 	/*
@@ -1066,8 +1072,8 @@ double MyAI::evalColor(const ChessBoard *chessboard, const vector<MoveInfo> &Mov
 	*/
 #ifdef UMOBI
 	double mobilities[32] = {0};
-	for(auto& m: Moves){
-		mobilities[m.from_location_no]++;
+	for(int i = 0; i < move_num; i++){
+		mobilities[Moves[i].from_location_no]++;
 	}
 	const double w_mob = 1./6;
 	const double max_mobi = 60;
@@ -1076,13 +1082,13 @@ double MyAI::evalColor(const ChessBoard *chessboard, const vector<MoveInfo> &Mov
 	const double max_mobi = ((2*2+3*3) + 180*2*4 + 6*2*3 + 18*2*3 + 90*1*3 + (90*1 + 270*2 + 810*1 + king_add_n_pawn[0])*4)*w_mob;
 #endif	
 	double mobility = 0;
-	for(auto& m: Moves){
-		if(m.from_chess_no == CHESS_COVER)
+	for(int i = 0; i < move_num; i++){
+		if(Moves[i].from_chess_no == CHESS_COVER)
 			continue;
 #ifdef UMOBI
 		mobility += w_mob;
 #else
-		mobility += values[m.from_chess_no]*w_mob;
+		mobility += values[Moves[i].from_chess_no]*w_mob;
 #endif
 	}
 
@@ -1141,13 +1147,13 @@ double MyAI::evalColor(const ChessBoard *chessboard, const vector<MoveInfo> &Mov
 
 // always use my point of view, so use this->Color
 double MyAI::Evaluate(const ChessBoard* chessboard, 
-	const vector<MoveInfo>& Moves, const int color){
+	const array<MoveInfo, MAX_MOVES> &Moves, const int move_num, const int color){
 	// score = My Score - Opponent's Score
 	// offset = <WIN + BONUS> to let score always not less than zero
 
 	double score = OFFSET;
 	bool finish;
-	int legal_move_count = Moves.size();
+	int legal_move_count = move_num;
 
 	if(
 		legal_move_count == 0 && 
@@ -1172,26 +1178,27 @@ double MyAI::Evaluate(const ChessBoard* chessboard,
 		finish = false;
 	}else{ // no conclusion
 
-		vector<MoveInfo> myMoves;
-		vector<MoveInfo> oppMoves;
-		myMoves.reserve(128);
-		oppMoves.reserve(128);
+		array<MoveInfo, MAX_MOVES> myMoves;
+		array<MoveInfo, MAX_MOVES> oppMoves;
+		int my_num, op_num;
 		
 		if (color == this->Color){
 			// copy mine, then expand opponent
 			myMoves = Moves;
-			Expand(chessboard, this->Color^1, oppMoves);
+			my_num = move_num;
+			Expand(chessboard, this->Color^1, oppMoves, &op_num);
 		}
 		else{
 			// copy opponent, then expand mine
 			oppMoves = Moves;
-			Expand(chessboard, this->Color, myMoves);
+			op_num = move_num;
+			Expand(chessboard, this->Color, myMoves, &my_num);
 		}
 
 		// My Material
 		double piece_value = (
-			evalColor(chessboard, myMoves, this->Color) -
-			evalColor(chessboard, oppMoves, this->Color^1)
+			evalColor(chessboard, myMoves, my_num, this->Color) -
+			evalColor(chessboard, oppMoves, op_num, this->Color^1)
 		);
 
 		// linear map to (-<WIN>, <WIN>)
@@ -1225,13 +1232,13 @@ double MyAI::Evaluate(const ChessBoard* chessboard,
 	return score;
 }
 
-bool MyAI::searchExtension(const ChessBoard& chessboard, const vector<MoveInfo> &Moves, const int color){
+bool MyAI::searchExtension(const ChessBoard& chessboard, const int move_num, const int color){
 	// Extremely low mobility.	
-	if (Moves.size() < 3)
+	if (move_num < 3)
 		return true;
 	// Last move is capturing.
-	if (!chessboard.History.empty()){
-		int last = chessboard.History.back();
+	if (chessboard.History_size > 0){
+		int last = chessboard.History[chessboard.History_size-1];
 		if ((chessboard.NoEatFlip == 0) && ((last / 100) != (last % 100)))
 			return true;
 	}
@@ -1366,10 +1373,8 @@ double MyAI::SEE(const ChessBoard *chessboard, const int position, const int col
 double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, MoveInfo& move, const int n_flips, const int prev_flip, const int color, const int depth, const int remain_depth, double alpha, double beta){
 	assert(color == RED || color == BLACK);
 
-	vector<MoveInfo> Moves;
-	vector<int> Choice;
-	Moves.reserve(128);
-	Choice.reserve(16);
+	array<MoveInfo, MAX_MOVES> Moves;
+	int move_num = 0;
 
 	// check table
 	TransPosition& table = this->transTable;
@@ -1411,14 +1416,14 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 			}
 		}
 		Moves = entry.all_moves;
-		// Choice = entry.flip_choices;
+		move_num = entry.move_num;
 		cached_moves = true;
 	}
 	else{
-		Expand(&chessboard, color, Moves);
+		Expand(&chessboard, color, Moves, &move_num);
 	}
 #else
-	Expand(&chessboard, color, Moves);
+	Expand(&chessboard, color, Moves, &move_num);
 #endif
 
 	// flip
@@ -1426,6 +1431,8 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 	// TODO: BUGFIX: when we ignore flip moves,
 	// but store the move and choices in table,
 	// it would be incorrect
+	array<int, 14> Choice;
+	int choice_num = 0;
 	bool has_flips = cached_moves;
 	if ((remain_depth >= MIN_R_DEPTH_TO_FLIP) &&
 		(!cached_moves) &&
@@ -1435,21 +1442,21 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 		has_flips = true;		
 		for (int i = chessboard.Heads[2]; i != -1; i = chessboard.Next[i]){
 			assert(chessboard.Board[i] == CHESS_COVER);
-			Moves.emplace_back(chessboard.Board, i, i);
+			Moves[move_num++].update(chessboard.Board, i, i);
 		}
 	}
 	if (has_flips && chessboard.Heads[2] != -1){
 		for(int j = 0; j < 14; j++){ // find remain chess
 			if(chessboard.CoverChess[j] > 0){
-				Choice.push_back(j);
+				Choice[choice_num++] = j;
 			}
 		}
 	}
-	moveOrdering(boardkey, Moves, depth);
+	moveOrdering(boardkey, Moves, move_num, depth);
 
 	bool isQuiescent = true;
 #ifdef USE_QUIESCENT
-	int see_pos = chessboard.History.empty() ? -1 : (chessboard.History.back() % 100); 
+	int see_pos = chessboard.History_size == 0 ? -1 : (chessboard.History[chessboard.History_size-1] % 100); 
 	isQuiescent = (see_pos == -1 || (remain_depth <= 0 && SEE(&chessboard, see_pos, color) <= 0));
 #endif
 
@@ -1458,26 +1465,26 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 		(remain_depth <= 0 && isQuiescent) || // reach limit of depth 
 		chessboard.Chess_Nums[RED] == 0 || // terminal node (no chess type)
 		chessboard.Chess_Nums[BLACK] == 0 || // terminal node (no chess type)
-		Moves.empty() || // terminal node (no move type)
+		move_num == 0 || // terminal node (no move type)
 		isDraw(&chessboard)  // draw
 		){
 		this->node++;
 		// odd: *-1, even: *1
-		return Evaluate(&chessboard, Moves, color) * (depth&1 ? -1 : 1);
+		return Evaluate(&chessboard, Moves, move_num, color) * (depth&1 ? -1 : 1);
 	}else{
 		double m = -LARGE_NUM;
 		double n = beta;
 		MoveInfo new_move;
 		int final_rdepth = remain_depth;
 		// search deeper
-		for(unsigned int i = 0; i < Moves.size(); i++){ // move
+		for(int i = 0; i < move_num; i++){ // move
 			double t = -LARGE_NUM;			
 			if (Moves[i].from_location_no == Moves[i].to_location_no){
 				// Chance node
 #ifdef USE_STAR1
-				t = Star1_EQU(chessboard, boardkey, Moves[i], n_flips, Choice, color, depth, remain_depth, max(alpha, m), beta);
+				t = Star1_EQU(chessboard, boardkey, Moves[i], n_flips, Choice, choice_num, color, depth, remain_depth, max(alpha, m), beta);
 #else
-				t = Star0_EQU(chessboard, boardkey, Moves[i], n_flips, Choice, color, depth, remain_depth);
+				t = Star0_EQU(chessboard, boardkey, Moves[i], n_flips, Choice, choice_num, color, depth, remain_depth);
 #endif
 
 				if(t > m){ 
@@ -1539,7 +1546,7 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 					entry.vtype = ENTRY_LOWER;
 					entry.child_move = move;
 					entry.all_moves = Moves;
-					entry.flip_choices = Choice;
+					entry.move_num = move_num;
 					table.insert(boardkey, color, entry);
 				}
 #endif
@@ -1569,7 +1576,7 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 			entry.rdepth = final_rdepth;
 			entry.child_move = move;
 			entry.all_moves = Moves;
-			entry.flip_choices = Choice;
+			entry.move_num = move_num;
 			table.insert(boardkey, color, entry);
 		}
 #endif
@@ -1577,15 +1584,14 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 	}
 }
 
-double MyAI::Star0_EQU(const ChessBoard& chessboard, const key128_t& boardkey, const MoveInfo& move, const int n_flips, const vector<int>& Choice, const int color, const int depth, const int remain_depth){
+double MyAI::Star0_EQU(const ChessBoard& chessboard, const key128_t& boardkey, const MoveInfo& move, const int n_flips, const array<int, 14>& Choice, const int choice_num, const int color, const int depth, const int remain_depth){
 	TransPosition& table = this->transTable;
 	MoveInfo new_move;
 	double total = 0;
-	int trim = max( min(
-			(int)log2(Choice.size()+1) * 2 - 1,
-			 7), 1);
+	int trim = max( (31 - __builtin_clz(choice_num))*2 - 1, 1); // log2_floor() * 2 -1
 	// int trim = 3;
-	for(auto& k: Choice){
+	for(int i = 0; i < choice_num; i++){
+		int k = Choice[i];
 		ChessBoard new_chessboard = chessboard;
 		key128_t new_boardkey = table.MakeMove(boardkey, move, k);
 		MakeMove(&new_chessboard, move.num, k);
@@ -1599,7 +1605,7 @@ double MyAI::Star0_EQU(const ChessBoard& chessboard, const key128_t& boardkey, c
 	return total / (chessboard.Chess_Nums[2+RED] + chessboard.Chess_Nums[2+BLACK]);
 }
 
-double MyAI::Star1_EQU(const ChessBoard& chessboard, const key128_t& boardkey, const MoveInfo& move, const int n_flips, const vector<int>& Choice, const int color, const int depth, const int remain_depth, const double alpha, const double beta){
+double MyAI::Star1_EQU(const ChessBoard& chessboard, const key128_t& boardkey, const MoveInfo& move, const int n_flips, const array<int, 14>& Choice, const int choice_num, const int color, const int depth, const int remain_depth, const double alpha, const double beta){
 	// me: [0, 2*(WIN+BONUS)], opp: [-2*(WIN+BONUS), 0]
 	double v_min = (depth&1) ? -2*OFFSET : 0;
 	double v_max = (depth&1) ? 0 : 2*OFFSET;
@@ -1617,10 +1623,9 @@ double MyAI::Star1_EQU(const ChessBoard& chessboard, const key128_t& boardkey, c
 	TransPosition& table = this->transTable;
 	MoveInfo new_move;
 	double total = 0;
-	int trim = max( min(
-			(int)log2(Choice.size()+1) * 2 - 1,
-			 7), 1);
-	for(auto& k: Choice){
+	int trim = max( (31 - __builtin_clz(choice_num))*2 - 1, 1); // log2_floor() * 2 -1
+	for(int i = 0; i < choice_num; i++){
+		int k = Choice[i];
 		ChessBoard new_chessboard = chessboard;
 		key128_t new_boardkey = table.MakeMove(boardkey, move, k);
 		MakeMove(&new_chessboard, move.num, k);
@@ -1654,7 +1659,7 @@ bool MyAI::isDraw(const ChessBoard* chessboard){
 	}
 
 	// Position Repetition
-	int start = chessboard->History.size() - 1;
+	int start = chessboard->History_size - 1;
 	// All ply must be move type
 	int end = max(start - chessboard->NoEatFlip + 1, 0);
 	
@@ -1663,7 +1668,7 @@ bool MyAI::isDraw(const ChessBoard* chessboard){
 	              ^
 				  start
 	*/
-	const vector<int>& H = chessboard->History;
+	const array<int, 1024>& H = chessboard->History;
 
 	// lps array
 	array<int, NOEATFLIP_LIMIT> dp = {0};
