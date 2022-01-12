@@ -645,7 +645,7 @@ bool MyAI::cantWinCheck(const ChessBoard *chessboard, const int color, const boo
 		return true;
 
 	// single chess and not cover
-	if (my_num == 1 && chessboard->Heads[color] != 2){
+	if (my_num == 1 && chessboard->Heads[color] != -1){
 		int me = chessboard->Heads[color];
 		if (chessboard->Chess_Nums[op_color] > 1) // single chess cannot eat more
 			return true;
