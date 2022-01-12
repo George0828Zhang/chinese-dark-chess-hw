@@ -53,6 +53,7 @@
 #define USE_QUIESCENT
 #define USE_KILLER
 
+// #define STALL_PENALTY
 // #define DISTANCE
 
 using namespace std;
@@ -1713,6 +1714,7 @@ bool MyAI::isTimeUp(){
 }
 
 double MyAI::estimatePlyTime(){
+#ifdef STALL_PENALTY
 	if (this->main_chessboard.NoEatFlip < 2){
 		this->stalls = this->stalls * 3 / 4;
 	}
@@ -1720,6 +1722,9 @@ double MyAI::estimatePlyTime(){
 		this->stalls += 2;
 	}
 	int stallpenalty = this->stalls / 5 * 30;
+#else
+	int stallpenalty = this->main_chessboard.NoEatFlip;
+#endif
 	int my_num = this->main_chessboard.Chess_Nums[this->Color];
 	int opp_num = this->main_chessboard.Chess_Nums[this->Color^1];
 	double real_exp_ply = this->num_plys + stallpenalty + my_num + opp_num;
