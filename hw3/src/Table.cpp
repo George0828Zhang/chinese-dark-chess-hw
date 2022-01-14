@@ -56,17 +56,17 @@ key128_t TransPosition::MakeMove(const key128_t& other, const MoveInfo& move, co
     return out;
 }
 bool TransPosition::query(const key128_t& key, const int color, TableEntry* out) {
-    num_query++;
+    // num_query++;
     if(tables[color].count(key) == 0)
         return false;
-    num_hit++;
+    // num_hit++;
     *out = tables[color][key];
     return true;
 }
 bool TransPosition::insert(const key128_t& key, const int color, const TableEntry& update){
     if(tables[color].count(key) == 0){
         tables[color][key] = update;
-        num_keys[color]++;
+        // num_keys[color]++;
         return true;
     }		
     TableEntry& entry = tables[color][key];

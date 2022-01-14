@@ -100,18 +100,18 @@ class KillerTable{
 	// [depth][m] -> depth*2 + i
 	array<MoveInfo, (MAX_DEPTH+1)*2> table;
 	array<bool, MAX_DEPTH+1> next_id;
-	size_t n_guess, n_correct;
+	// size_t n_guess, n_correct;
 public:
 	KillerTable(){
 		next_id.fill(0);
 		clear_stats();
 	}
-	double success_rate(){
-		return n_guess > 0 ? ((double)n_correct / n_guess * 100) : 0;
-	}
+	// double success_rate(){
+	// 	return n_guess > 0 ? ((double)n_correct / n_guess * 100) : 0;
+	// }
 	void clear_stats(){
-		n_guess = 0;
-		n_correct = 0;
+		// n_guess = 0;
+		// n_correct = 0;
 	}	
 	/* erases the first n*2 elements and
 	move the rest upward in table */
@@ -128,11 +128,11 @@ public:
 	}
 	void insert(const MoveInfo& move, const int depth){
 		if (is_killer(move, depth)){
-			n_correct++;
-			n_guess++;
+			// n_correct++;
+			// n_guess++;
 			return;
 		}
-		n_guess++;
+		// n_guess++;
 		table[depth*2 + next_id[depth]] = move;
 		next_id[depth] = !next_id[depth];
 	}

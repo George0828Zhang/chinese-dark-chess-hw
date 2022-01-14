@@ -28,7 +28,7 @@
 
 #define TOTAL_TIME 900000.
 #define MAX_PLY_TIME 15000.
-#define MIN_PLY_TIME 1500.
+#define MIN_PLY_TIME 500.
 
 #define WALL_MULTIPLIER 4
 
@@ -37,13 +37,13 @@
 #define EXPECT_PLYS_LONG 320 / 2
 // #else
 // #define EXPECT_PLYS 180 / 2
-// #define EXPECT_PLYS_LONG 320 / 2
+// #define EXPECT_PLYS_LONG 270 / 2
 // #endif
 
 #define USE_STAR1
-#define MAX_FLIPS_IN_SEARCH 3
+#define MAX_FLIPS_IN_SEARCH 2
 #define MIN_FLIP_INTERVAL 1
-#define MIN_R_DEPTH_TO_FLIP 3 
+#define MIN_R_DEPTH_TO_FLIP 1 
 
 #define CLEAR_TRANS_FREQ 1
 #define USE_TRANSPOSITION
@@ -227,12 +227,12 @@ void MyAI::moveOrdering(const key128_t& boardkey, array<MoveInfo, MAX_MOVES> &Mo
 	}
 #endif
 	sort(Moves.begin(), Moves.begin() + move_num, [](const MoveInfo& a, const MoveInfo& b) {return a.priority > b.priority;});
-	if (depth == 0){
-		// set priority to rank to be printed
-		for(int i = 0; i < move_num; i++){
-			Moves[i].rank = i; 
-		}
-	}
+	// if (depth == 0){
+	// 	// set priority to rank to be printed
+	// 	for(int i = 0; i < move_num; i++){
+	// 		Moves[i].rank = i; 
+	// 	}
+	// }
 }
 
 // *********************** AI FUNCTION *********************** //
@@ -413,7 +413,7 @@ void MyAI::generateMove(char move[6])
 	// depth-3 search
 	this->node = 0;
 	MoveInfo best_move_tmp;
-	t = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, 0, -1, this->Color, 0, 3, -LARGE_NUM, LARGE_NUM);
+	t = Nega_scout(this->main_chessboard, boardkey, best_move_tmp, MAX_FLIPS_IN_SEARCH-1, -1, this->Color, 0, 3, -LARGE_NUM, LARGE_NUM);
 	StartPoint = best_move_tmp.from_location_no;
 	EndPoint   = best_move_tmp.to_location_no;
 	sprintf(move, "%c%c-%c%c",'a'+(StartPoint%4),'1'+(7-StartPoint/4),'a'+(EndPoint%4),'1'+(7-EndPoint/4));
@@ -426,11 +426,13 @@ void MyAI::generateMove(char move[6])
 	prev_end = this->ply_elapsed;
 	expected = wall * WALL_MULTIPLIER;
 
-	int killer_rate = (int)this->killer.success_rate();
-	this->killer.clear_stats();
-	fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s, Kills: %2d%%, Rank: %2d, Wall: %1.3lf, Next: %s\n", (this->timeIsUp ? 'U' : 'D'),
-			3, node, t - OFFSET, move, killer_rate, best_move_tmp.rank, wall / 1000, op_move);
-	fflush(stderr);
+	// int killer_rate = (int)this->killer.success_rate();
+	// this->killer.clear_stats();
+	// fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s, Kills: %2d%%, Rank: %2d, Wall: %1.3lf, Next: %s\n", (this->timeIsUp ? 'U' : 'D'),
+	// 		3, node, t - OFFSET, move, killer_rate, best_move_tmp.rank, wall / 1000, op_move);
+	// fflush(stderr);
+	fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s, Wall: %1.3lf, Next: %s\n", (this->timeIsUp ? 'U' : 'D'),
+			3, node, t - OFFSET, move, wall / 1000, op_move);
 
 	// deeeper search
 	for(int depth = 4; !isTimeUp() && depth <= MAX_DEPTH && abs(t - OFFSET) < WIN; depth+=2){
@@ -483,10 +485,12 @@ void MyAI::generateMove(char move[6])
 		expected = wall * WALL_MULTIPLIER;
 		// U: Undone
 		// D: Done
-		killer_rate = (int)this->killer.success_rate();
-		this->killer.clear_stats();
-		fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s, Kills: %2d%%, Rank: %2d, Wall: %1.3lf, Next: %s\n", (this->timeIsUp ? 'U' : 'D'),
-			depth, node, t - OFFSET, move, killer_rate, best_move_tmp.rank, wall / 1000, op_move);
+		// killer_rate = (int)this->killer.success_rate();
+		// this->killer.clear_stats();
+		// fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s, Kills: %2d%%, Rank: %2d, Wall: %1.3lf, Next: %s\n", (this->timeIsUp ? 'U' : 'D'),
+		// 	depth, node, t - OFFSET, move, killer_rate, best_move_tmp.rank, wall / 1000, op_move);
+		fprintf(stderr, "[%c] Depth: %2d, Node: %10d, Score: %+1.5lf, Move: %s, Wall: %1.3lf, Next: %s\n", (this->timeIsUp ? 'U' : 'D'),
+			depth, node, t - OFFSET, move, wall / 1000, op_move);
 		fflush(stderr);
 	}
 	if(this->main_chessboard.cantWin[this->Color]){
@@ -495,14 +499,14 @@ void MyAI::generateMove(char move[6])
 	}
 
 #ifdef USE_TRANSPOSITION
-	size_t n_query = this->transTable.num_query;
-	size_t n_hit = this->transTable.num_hit;
-	char msg[3][64];
-	humanReadableByteCountSI(
-		this->transTable.num_keys[RED] + this->transTable.num_keys[BLACK], msg[0]);
-	humanReadableByteCountSI(n_hit, msg[1]);
-	humanReadableByteCountSI(n_query, msg[2]);
-	fprintf(stderr, "Table size: %s (entries), Hit rate: %s / %s (%.1lf%%)\n", msg[0], msg[1], msg[2], n_hit / (double)n_query * 100);
+	// size_t n_query = this->transTable.num_query;
+	// size_t n_hit = this->transTable.num_hit;
+	// char msg[3][64];
+	// humanReadableByteCountSI(
+	// 	this->transTable.num_keys[RED] + this->transTable.num_keys[BLACK], msg[0]);
+	// humanReadableByteCountSI(n_hit, msg[1]);
+	// humanReadableByteCountSI(n_query, msg[2]);
+	// fprintf(stderr, "Table size: %s (entries), Hit rate: %s / %s (%.1lf%%)\n", msg[0], msg[1], msg[2], n_hit / (double)n_query * 100);
 
 	if (num_plys % CLEAR_TRANS_FREQ == 0)
 		this->transTable.clear_tables();
@@ -1279,7 +1283,7 @@ double MyAI::SEE(const ChessBoard *chessboard, const int position, const int col
 		capture piece at location using the first element h in B; 
 		the net gain of material values during the exchange 
 	*/
-
+#ifdef USE_QUIESCENT
 	assert((position >= 0 && position < 32));
 	assert(chessboard->Board[position] >= 0);
 	// assert(chessboard->Board[position] / 7 == (color^1));
@@ -1368,6 +1372,9 @@ double MyAI::SEE(const ChessBoard *chessboard, const int position, const int col
 		}
 	}
 	return gain;
+#else
+	return 0;
+#endif
 }
 
 double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, MoveInfo& move, const int n_flips, const int prev_flip, const int color, const int depth, const int remain_depth, double alpha, double beta){
@@ -1454,15 +1461,10 @@ double MyAI::Nega_scout(const ChessBoard chessboard, const key128_t& boardkey, M
 	}
 	moveOrdering(boardkey, Moves, move_num, depth);
 
-	bool isQuiescent = true;
-#ifdef USE_QUIESCENT
-	int see_pos = chessboard.History_size == 0 ? -1 : (chessboard.History[chessboard.History_size-1] % 100); 
-	isQuiescent = (see_pos == -1 || (remain_depth <= 0 && SEE(&chessboard, see_pos, color) <= 0));
-#endif
-
+	int see_pos = chessboard.History_size == 0 ? -1 : (chessboard.History[chessboard.History_size-1] % 100);
 	if(isTimeUp() || // time is up
 		depth >= MAX_DEPTH || // reach absolute depth
-		(remain_depth <= 0 && isQuiescent) || // reach limit of depth 
+		(remain_depth <= 0 && (see_pos == -1 || SEE(&chessboard, see_pos, color) <= 0)) || // reach limit of depth 
 		chessboard.Chess_Nums[RED] == 0 || // terminal node (no chess type)
 		chessboard.Chess_Nums[BLACK] == 0 || // terminal node (no chess type)
 		move_num == 0 || // terminal node (no move type)
@@ -1588,7 +1590,7 @@ double MyAI::Star0_EQU(const ChessBoard& chessboard, const key128_t& boardkey, c
 	TransPosition& table = this->transTable;
 	MoveInfo new_move;
 	double total = 0;
-	int trim = max( (31 - __builtin_clz(choice_num))*2 - 1, 1); // log2_floor() * 2 -1
+	int trim = n_flips == 0 ? 1 : 3;// max( (31 - __builtin_clz(choice_num))*2 - 1, 1); // log2_floor() * 2 -1
 	// int trim = 3;
 	for(int i = 0; i < choice_num; i++){
 		int k = Choice[i];
@@ -1623,7 +1625,7 @@ double MyAI::Star1_EQU(const ChessBoard& chessboard, const key128_t& boardkey, c
 	TransPosition& table = this->transTable;
 	MoveInfo new_move;
 	double total = 0;
-	int trim = max( (31 - __builtin_clz(choice_num))*2 - 1, 1); // log2_floor() * 2 -1
+	int trim = n_flips == 0 ? 1 : 3;// max( (31 - __builtin_clz(choice_num))*2 - 1, 1); // log2_floor() * 2 -1
 	for(int i = 0; i < choice_num; i++){
 		int k = Choice[i];
 		ChessBoard new_chessboard = chessboard;
