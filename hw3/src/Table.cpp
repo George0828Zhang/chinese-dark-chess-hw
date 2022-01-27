@@ -1,12 +1,6 @@
 #include <float.h>
 #include "MyAI.h"
 
-TableEntry::TableEntry():
-    value(-DBL_MAX),
-    rdepth(-1),
-    vtype(ENTRY_LOWER),
-    all_moves(),
-    flip_choices(){}
 
 // class TransPosition{
 // 	static const int POSITIONS = 32; 
@@ -21,7 +15,7 @@ void TransPosition::init(mt19937_64& rng){
         uint64_t hi = rng();
         salt[i] = lo + ((key128_t)hi << 64);
     }
-    clear_tables({0,1});
+    clear_tables();
 }
 inline int TransPosition::Convert(int chess) {
     // COVER -1 -> 15
@@ -34,13 +28,9 @@ key128_t TransPosition::compute_hash(const ChessBoard& chessboard) const {
         int piece = Convert(chessboard.Board[i]);
         h ^= salt[i * TYPES + piece];
     }
-    for(int i = 0; i < COVERS; i++){
-        int num = chessboard.CoverChess[i];
-        h ^= salt.at((POSITIONS+i) * TYPES + num);
-    }
     return h;
 }
-key128_t TransPosition::MakeMove(const key128_t& other, const MoveInfo& move, const int chess = 0, const int cover_num = 0) const {
+key128_t TransPosition::MakeMove(const key128_t& other, const MoveInfo& move, const int chess) const {
     key128_t out = other;
 
     int src = move.from_location_no;
@@ -53,8 +43,6 @@ key128_t TransPosition::MakeMove(const key128_t& other, const MoveInfo& move, co
         static const int cover = Convert(CHESS_COVER);
         out ^= salt[src * TYPES + cover]; // remove cover
         out ^= salt[src * TYPES + chess]; // add chess
-        out ^= salt[(POSITIONS+chess) * TYPES + cover_num]; // remove cover_num
-        out ^= salt[(POSITIONS+chess) * TYPES + cover_num - 1]; // add cover_num - 1
     }
     else if (dst_chess == CHESS_EMPTY){// move
         out ^= salt[src * TYPES + src_chess]; // remove from src
@@ -68,17 +56,17 @@ key128_t TransPosition::MakeMove(const key128_t& other, const MoveInfo& move, co
     return out;
 }
 bool TransPosition::query(const key128_t& key, const int color, TableEntry* out) {
-    num_query++;
+    // num_query++;
     if(tables[color].count(key) == 0)
         return false;
-    num_hit++;
+    // num_hit++;
     *out = tables[color][key];
     return true;
 }
 bool TransPosition::insert(const key128_t& key, const int color, const TableEntry& update){
     if(tables[color].count(key) == 0){
         tables[color][key] = update;
-        num_keys[color]++;
+        // num_keys[color]++;
         return true;
     }		
     TableEntry& entry = tables[color][key];
@@ -89,11 +77,11 @@ bool TransPosition::insert(const key128_t& key, const int color, const TableEntr
     }
     return false;
 }
-void TransPosition::clear_tables(const vector<int>& ids){
-    for(auto i: ids){
-        tables[i].clear();
-        num_keys[i] = 0;
-    }
+void TransPosition::clear_tables(){
+    tables[0].clear();
+    num_keys[0] = 0;
+    tables[1].clear();
+    num_keys[1] = 0;
     num_query = 0;
     // num_short = 0;
 	num_hit = 0;
